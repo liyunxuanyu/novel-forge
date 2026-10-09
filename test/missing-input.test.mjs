@@ -21,6 +21,7 @@ import { warehouseTools } from "../lib/tools-warehouse.js";
 import { fanoutTools } from "../lib/tools-fanout.js";
 import { chapterTools } from "../lib/tools-chapter.js";
 import { directorTools } from "../lib/tools-director.js";
+import { fakeExec } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
 const failures = [];
@@ -59,7 +60,7 @@ const map = new Map(
   [...warehouseTools(ctx, () => ws), ...fanoutTools(ctx, () => ws), ...chapterTools(ctx, () => ws), ...directorTools(ctx, () => ws)]
     .map((d) => [d.name, defineTool(d)]),
 );
-const call = (n, a) => map.get(n).execute(a ?? {}, { signal: new AbortController().signal });
+const call = (n, a) => map.get(n).execute(a ?? {}, fakeExec());
 
 console.log(`阶段十 · 输入侧闸门测试\n沙盒: ${ws}\n`);
 

@@ -17,6 +17,7 @@ import { directorTools } from "../lib/tools-director.js";
 import { chapterTools } from "../lib/tools-chapter.js";
 import { warehouseTools } from "../lib/tools-warehouse.js";
 import { fanoutTools } from "../lib/tools-fanout.js";
+import { fakeExec } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
 const failures = [];
@@ -55,7 +56,7 @@ function runWith(values) {
   const ctx = { logger, get: (n) => (n === "workflowEngine" ? engineReturning(values) : undefined) };
   const tools = directorTools(ctx, () => ws);
   const run = tools.find((d) => d.name === "forge_director_run");
-  return defineTool(run).execute({ title: BOOK, context: { draftText: "沈昭张口。", volumePlan: "卷一：开口", contract: "不许虚构设定。" } }, { signal: new AbortController().signal });
+  return defineTool(run).execute({ title: BOOK, context: { draftText: "沈昭张口。", volumePlan: "卷一：开口", contract: "不许虚构设定。" } }, fakeExec());
 }
 
 console.log(`阶段十 · 空白输出闸门测试\n沙盒: ${ws}\n`);
@@ -64,7 +65,7 @@ console.log(`阶段十 · 空白输出闸门测试\n沙盒: ${ws}\n`);
 const BOOK = "空白试炼";
 const baseCtx = { logger, get: () => undefined };
 const setup = new Map([...warehouseTools(baseCtx, () => ws), ...chapterTools(baseCtx, () => ws)].map((d) => [d.name, defineTool(d)]));
-const setupCall = (n, a) => setup.get(n).execute(a ?? {}, { signal: new AbortController().signal });
+const setupCall = (n, a) => setup.get(n).execute(a ?? {}, fakeExec());
 assert.equal((await setupCall("forge_init_workspace", {})).ok, true);
 assert.equal((await setupCall("forge_create_book", {
   title: BOOK, coreIdea: "x", genreAndAudience: "x", keyAppeal: "x", differentiation: "x",
@@ -73,7 +74,7 @@ assert.equal((await setupCall("forge_create_book", {
 
 // 骨架是 stop 闸门，不确认就派不出去子代理。先把四件设计工件落真源。
 const fanoutBase = new Map(fanoutTools(baseCtx, () => ws).map((d) => [d.name, defineTool(d)]));
-const fanoutCall = (n, a) => fanoutBase.get(n).execute(a ?? {}, { signal: new AbortController().signal });
+const fanoutCall = (n, a) => fanoutBase.get(n).execute(a ?? {}, fakeExec());
 for (const [artifact, body] of Object.entries({
   skeleton: "# 故事骨架\n\n## 第一部 追求\n要开口。\n\n## 索引\n\n- 人物 / 沈昭\n",
   worldbook: "## 人物｜沈昭\n\n剑客。\n",
@@ -134,7 +135,7 @@ await t("端到端：审读交白卷时，这一章不会被零发现项放行",
     [...warehouseTools(ctx, () => ws), ...chapterTools(ctx, () => ws), ...fanoutTools(ctx, () => ws), ...directorTools(ctx, () => ws)]
       .map((d) => [d.name, defineTool(d)]),
   );
-  const call = (n, a) => map.get(n).execute(a ?? {}, { signal: new AbortController().signal });
+  const call = (n, a) => map.get(n).execute(a ?? {}, fakeExec());
 
   await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "〔硬〕沈昭必须开口。\n" });
   await call("forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 });

@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { fanoutTools } from "../lib/tools-fanout.js";
 import * as wh from "../lib/warehouse.js";
+import { fakeExec } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
 const failures = [];
@@ -42,7 +43,7 @@ function byName(ctx) {
   for (const def of fanoutTools(ctx, () => ws)) m.set(def.name, defineTool(def));
   return m;
 }
-const callOf = (m, n, a) => m.get(n).execute(a ?? {}, { signal: new AbortController().signal });
+const callOf = (m, n, a) => m.get(n).execute(a ?? {}, fakeExec());
 
 console.log(`阶段六 · fan-out 工具层测试\n沙盒: ${ws}\n`);
 

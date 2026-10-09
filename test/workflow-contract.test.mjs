@@ -12,6 +12,7 @@
 import { strict as assert } from "node:assert";
 import { runRound, runFanout } from "../lib/dispatch.js";
 import { buildPrompts } from "../lib/dispatch.js";
+import { FAKE_PARENT } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
 const failures = [];
@@ -65,7 +66,7 @@ console.log("阶段十 · 真引擎契约对照测试（照抄 dsh-workflow-ptc 
 
 await t("单发脚本：meta 合契约，派得出去", async () => {
   const engine = contractEngine();
-  const r = await runRound(engine, { label: "draft", prompt: "写第 1 章", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "写第 1 章", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.done.length, 1);
   assert.equal(engine.starts.length, 1);
@@ -75,7 +76,7 @@ await t("并行脚本：meta 合契约，派得出去", async () => {
   const engine = contractEngine();
   const split = buildPrompts({ step: "review", prompt: "审这一章" }, { dimensions: ["节奏", "文风"] });
   assert.equal(split.mode, "parallel");
-  const r = await runRound(engine, { label: "review", prompts: split.prompts, mode: split.mode });
+  const r = await runRound(engine, { label: "review", prompts: split.prompts, mode: split.mode, parent: FAKE_PARENT });
   assert.equal(r.ok, true, JSON.stringify(r));
 });
 
@@ -86,6 +87,7 @@ await t("fan-out 脚本：meta 合契约，派得出去", async () => {
       { id: "skeleton", prompt: "写骨架" },
       { id: "worldbook", prompt: "写世界书" },
     ],
+    parent: FAKE_PARENT,
   });
   assert.equal(r.ok, true, JSON.stringify(r));
 });
@@ -94,7 +96,7 @@ await t("meta 缺 description：派发必须结构化失败，而不是把异常
   // 模拟我们若忘了补 description：假引擎抛 META_INVALID，runRound 要把它收成结构化返回。
   const engine = contractEngine();
   const broken = { start: (r) => engine.start({ ...r, meta: { name: r.meta.name } }) };
-  const r = await runRound(broken, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(broken, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   // start 是同步抛的，runRound 用 try/catch 包着，所以这里是 ok:false 的 start-failed
   assert.equal(r.ok, false, "meta 不合约必须失败，不能算成功：" + JSON.stringify(r));
   assert.equal(r.stage, "start-failed", JSON.stringify(r));
@@ -103,7 +105,7 @@ await t("meta 缺 description：派发必须结构化失败，而不是把异常
 
 await t("真实 runMeta 带 description（防止将来又漏回去）", async () => {
   const engine = contractEngine();
-  const r = await runRound(engine, { label: "settle", prompt: "x", mode: "single" });
+  const r = await runRound(engine, { label: "settle", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, true, JSON.stringify(r));
   const meta = engine.starts[0].meta;
   assert.equal(typeof meta.description, "string");

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { deconstructTools } from "../lib/tools-deconstruct.js";
+import { fakeExec } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
 const failures = [];
@@ -64,7 +65,7 @@ const build = (ctx) => {
   for (const d of deconstructTools(ctx, () => ws)) m.set(d.name, defineTool(d));
   return m;
 };
-const call = (M, name, a) => M.get(name).execute(a ?? {}, { signal: new AbortController().signal });
+const call = (M, name, a) => M.get(name).execute(a ?? {}, fakeExec());
 const text = (M, name, r) => M.get(name).output.render({}, r)[0].text;
 
 console.log(`阶段七 · 拆书工具层测试\n沙盒: {ws}\n`.replace("{ws}", ws));

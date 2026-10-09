@@ -1,6 +1,7 @@
 /** 阶段五测试：执行层。用假引擎跑，不碰模型。 */
 import { strict as assert } from "node:assert";
 import { runRound, buildPrompts } from "../lib/dispatch.js";
+import { FAKE_PARENT } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
 const failures = [];
@@ -44,7 +45,7 @@ function fakeEngine({ value, stopReason = "completed", throwOnResult = false, th
 
 await t("单发成功：交回一份结果", async () => {
   const engine = fakeEngine({ value: { done: ["正文草稿"], failed: [] } });
-  const r = await runRound(engine, { label: "draft", prompt: "写第一章", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "写第一章", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, true);
   assert.equal(r.degraded, false);
   assert.deepEqual(r.done, ["正文草稿"]);
@@ -52,7 +53,7 @@ await t("单发成功：交回一份结果", async () => {
 });
 await t("任务文本走 args 传，不拼进脚本（避开引号与 ${}）", async () => {
   const engine = fakeEngine({ value: { done: ["x"], failed: [] } });
-  await runRound(engine, { label: "draft", prompt: `含"引号"和 \${花括号} 与 \`反引号\``, mode: "single" });
+  await runRound(engine, { label: "draft", prompt: `含"引号"和 \${花括号} 与 \`反引号\``, mode: "single", parent: FAKE_PARENT });
   const spec = engine.calls[0];
   assert.equal(spec.args.prompt, `含"引号"和 \${花括号} 与 \`反引号\``);
   assert.equal(spec.script.includes("花括号"), false, "提示词不该出现在脚本文本里");
@@ -61,7 +62,7 @@ await t("任务文本走 args 传，不拼进脚本（避开引号与 ${}）", a
 
 await t("并行成功：多份结果都交回来", async () => {
   const engine = fakeEngine({ value: { done: ["a", "b", "c"], failed: [] } });
-  const r = await runRound(engine, { label: "review", prompts: ["p1", "p2", "p3"], mode: "parallel" });
+  const r = await runRound(engine, { label: "review", prompts: ["p1", "p2", "p3"], mode: "parallel", parent: FAKE_PARENT });
   assert.equal(r.ok, true);
   assert.equal(r.mode, "parallel");
   assert.equal(r.done.length, 3);
@@ -69,7 +70,7 @@ await t("并行成功：多份结果都交回来", async () => {
 
 await t("标准 6：部分子代理失败，成功的结果照常落地并降级", async () => {
   const engine = fakeEngine({ value: { done: ["好的那份"], failed: [{ index: 1, reason: "超时" }] } });
-  const r = await runRound(engine, { label: "review", prompts: ["p1", "p2"], mode: "parallel" });
+  const r = await runRound(engine, { label: "review", prompts: ["p1", "p2"], mode: "parallel", parent: FAKE_PARENT });
   assert.equal(r.ok, true);
   assert.equal(r.degraded, true, "有失败就必须标降级");
   assert.deepEqual(r.done, ["好的那份"]);
@@ -79,7 +80,7 @@ await t("标准 6：部分子代理失败，成功的结果照常落地并降级
 
 await t("全部失败：明确报错而不是假装成功", async () => {
   const engine = fakeEngine({ value: { done: [], failed: [{ index: 0, reason: "配额用尽" }] } });
-  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, false);
   assert.equal(r.degraded, true);
   assert.equal(r.stage, "empty-run");
@@ -88,7 +89,7 @@ await t("全部失败：明确报错而不是假装成功", async () => {
 
 await t("工作流被取消：降级，不抛异常", async () => {
   const engine = fakeEngine({ stopReason: "cancelled", value: { done: [], failed: [] } });
-  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, false);
   assert.equal(r.stage, "run-stopped");
   assert.match(r.detail, /cancelled/);
@@ -96,7 +97,7 @@ await t("工作流被取消：降级，不抛异常", async () => {
 
 await t("取消但已有部分结果：当成降级成功", async () => {
   const engine = fakeEngine({ stopReason: "cancelled", value: { done: ["半成品"], failed: [] } });
-  const r = await runRound(engine, { label: "review", prompts: ["p"], mode: "single" });
+  const r = await runRound(engine, { label: "review", prompts: ["p"], mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, true);
   assert.equal(r.degraded, true);
   assert.deepEqual(r.done, ["半成品"]);
@@ -104,7 +105,7 @@ await t("取消但已有部分结果：当成降级成功", async () => {
 
 await t("引擎抛异常：降级返回，绝不往上抛", async () => {
   const engine = fakeEngine({ throwOnResult: true });
-  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, false);
   assert.equal(r.stage, "run-threw");
   assert.match(r.detail, /网络断了/);
@@ -112,7 +113,7 @@ await t("引擎抛异常：降级返回，绝不往上抛", async () => {
 
 await t("引擎起不来：降级返回", async () => {
   const engine = fakeEngine({ throwOnStart: true });
-  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, false);
   assert.equal(r.stage, "start-failed");
   assert.match(r.detail, /引擎起不来/);
@@ -120,13 +121,13 @@ await t("引擎起不来：降级返回", async () => {
 
 await t("引擎返回空句柄：降级返回", async () => {
   const engine = fakeEngine({ startReturns: false });
-  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, false);
   assert.equal(r.stage, "start-failed");
 });
 
 await t("宿主没有 workflowEngine：给出可读的说明", async () => {
-  const r = await runRound(null, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(null, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, false);
   assert.equal(r.stage, "no-engine");
   assert.match(r.detail, /workflowEngine/);
@@ -134,14 +135,14 @@ await t("宿主没有 workflowEngine：给出可读的说明", async () => {
 
 await t("dispose 抛错不会盖掉结果", async () => {
   const engine = fakeEngine({ value: { done: ["正文"], failed: [] }, disposeThrows: true });
-  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single" });
+  const r = await runRound(engine, { label: "draft", prompt: "x", mode: "single", parent: FAKE_PARENT });
   assert.equal(r.ok, true);
   assert.deepEqual(r.done, ["正文"]);
 });
 
 await t("并行只有一个任务时退回单发", async () => {
   const engine = fakeEngine({ value: { done: ["x"], failed: [] } });
-  const r = await runRound(engine, { label: "review", prompts: ["only"], mode: "parallel" });
+  const r = await runRound(engine, { label: "review", prompts: ["only"], mode: "parallel", parent: FAKE_PARENT });
   assert.equal(r.mode, "single");
 });
 

@@ -21,6 +21,7 @@ import { directorTools } from "../lib/tools-director.js";
 import { fanoutTools } from "../lib/tools-fanout.js";
 import { chapterTools } from "../lib/tools-chapter.js";
 import * as wh from "../lib/warehouse.js";
+import { fakeExec } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
 const failures = [];
@@ -83,7 +84,7 @@ function register(list) {
   return (n, a) => {
     const t = map.get(n);
     if (!t) throw new Error(`没有工具 ${n}`);
-    return t.execute(a ?? {}, { signal: new AbortController().signal });
+    return t.execute(a ?? {}, fakeExec());
   };
 }
 const call = register([...warehouseTools(ctx, () => ws), ...fanoutTools(ctx, () => ws), ...chapterTools(ctx, () => ws), ...directorTools(ctx, () => ws)]);
