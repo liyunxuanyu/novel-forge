@@ -285,7 +285,14 @@ const scenarios = [
   ["forge_gate_check", { title: BOOK, node: "chapter.draft" }],
   ["forge_list_debts", { title: BOOK }],
   ["forge_chapter_status", { title: BOOK, chapter: 1 }],
-  ["forge_artifact_candidate", { title: BOOK, artifact: "skeleton", body: "第 1 卷：主角发现稿子会成真。" }],
+  // 骨架必须带「## 索引」，否则 forge_consistency_check 会在 no-index 处早退，
+  // missing / typeMismatch / extra 三个条目级 schema 永远走不到（覆盖表早就点名了这三处）。
+  // 这里刻意造出三种不匹配：
+  //   人物/甲  → 世界书里有「甲」但类型是「规则」→ typeMismatch
+  //   规则/乙  → 世界书里根本没有乙          → missing
+  //   世界书里的「丙」索引里没有              → extra
+  ["forge_artifact_candidate", { title: BOOK, artifact: "skeleton", body: "# 骨架\n\n## 索引\n\n- 人物 / 主角\n- 人物 / 甲\n- 规则 / 乙\n" }],
+  ["forge_artifact_candidate", { title: BOOK, artifact: "worldbook", body: "## 人物｜主角\n\n主角条目。\n\n## 规则｜甲\n\n甲条目。\n\n## 规则｜丙\n\n丙条目。\n" }],
   ["forge_ref_plan", { sourceId: "test_src", ranges: [{ start: 1, end: 120 }] }],
   ["forge_ref_status", {}],
   ["forge_style_list", { title: BOOK }],
@@ -297,9 +304,11 @@ const scenarios = [
   ["forge_record_finding", { title: BOOK, chapter: 1, severity: "s4", quote: "风很轻。", note: "用词重复。" }],
   ["forge_list_debts", { title: BOOK }],
   ["forge_debt_gate", { title: BOOK }],
-  ["forge_consistency_check", { title: BOOK }],
   ["forge_write_truth", { title: BOOK, subject: "design(ch0001): 测试写入", files: [{ path: "大纲/卷01/0001-细纲.md", content: "第一章细纲。" }] }],
   ["forge_confirm_artifact", { title: BOOK, artifact: "skeleton" }],
+  ["forge_confirm_artifact", { title: BOOK, artifact: "worldbook" }],
+  // 骨架与世界书都落真源之后才查一致性——早了会走 no-skeleton 早退。
+  ["forge_consistency_check", { title: BOOK }],
   ["forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "第一章细纲。" }],
   ["forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 }],
   ["forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 }],
@@ -343,6 +352,11 @@ for (const [name, args] of scenarios) {
       for (const t of texts) {
         assert.ok(out.includes(t), `${name} 的 render 没把产出正文交回调用方（丢了 ${t.length} 字）`);
       }
+    }
+    // 「形状对」不等于「真的成了」：这两个工具返回 ok:false 也照样过 schema 校验。
+    // 之前就是这样——世界书其实没落盘，测试全绿，然后一致性核对里 extra 恒为空。
+    if (name === "forge_artifact_candidate" || name === "forge_confirm_artifact") {
+      assert.equal(res.ok, true, `${name} 返回了 ok:false：${res.stage}｜${res.detail}`);
     }
     passed++;
     console.log(`  PASS  ${name} 返回值过宿主校验`);

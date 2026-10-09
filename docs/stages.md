@@ -1298,3 +1298,48 @@ A-1/A-2/A-3/A-4/A-5 五条通过标准全部达成，其中两条是这条测试
 ## 阶段六至十
 
 见上方状态表，逐阶段细化。
+
+
+---
+
+## 订正 · 阶段九「数据通路被宿主工具链挡死」——这条结论是错的
+
+上面第 1003–1016 行当时判断：接通面板数据必须走 Typert Remote 链路，而
+`@Remote` 是编译期装饰器、`dsh-typert-generator` 不在宿主安装里，所以「被挡死」。
+
+**有一条纯运行时的路，当时没找到：会话投影。**
+
+证据链（全部读自宿主已安装代码）：
+
+1. `dsh-cordis-client-runner/lib/client.js` 的 slot 契约表里，我注册的两个 slot
+   ——`conversation.input.dock`、`conversation.session.header.utilities`——
+   的 `standardProps` **都包含** `"useProjection: UseProjection"`。
+   也就是说宿主本来就会把这个钩子发给面板组件。
+2. 宿主自带的 `todos` 就是这条路的完整范例，全程没有 typert：
+   - 服务端 `dsh-tool-todo/lib/index.js:80`
+     `ctx.sessionProjections.register({ key: "todos", stateSchema, init, apply, wire })`
+   - 写入 `:173` `exec.agent.session.append("todo/write", { todos })`
+   - 客户端 `dsh-client-ui-conversation/lib/client.js:17745`
+     `function TodoDock({ useProjection }) { … useProjection("todos") … }`
+3. `stateSchema` 只需要有 `.parse()` 方法，**不要求是 zod**
+   （`dsh-session-projection/lib/index.js:255,297` 只调 `.parse`）。
+   而 zod 在本插件的解析路径里拿不到——所以用自写的 `{ parse }` 就够了。
+
+**已落地**：
+
+- 新增 `lib/publish.js`：`PROJECTION_KEY` / `PUBLISH_EVENT` / `publish()` /
+  `mergeGates()` / `projectionStateSchema` / `projectionView`。
+  铁律：推送失败绝不让工具失败（`publish` 全程 try/catch，只返回真假）。
+- `lib/index.js`：动态 `ctx.inject(["sessionProjections"], …)` 注册 `novelForge` 投影；
+  并用 `withPublish()` 集中包一层工具，跑完把 `ok:true` 的结果推上去。
+  集中包而不是往七个工具各写一遍——漏一个就是一个永远「数据不足」的面板，
+  而那种漏法在真机上根本看不出来。
+- `lib/ui-components.js`：`useProjectionData(props)` 读 `useProjection("novelForge")`，
+  喂给既有的 `buildWorkspaceView()`。拿不到就退回 `props.view`，
+  再拿不到就显示「数据不足」——没数据就说没数据。
+- `lib/client.bundle.js` 已重新生成。
+
+**只推 `ok:true` 的结果**：失败态推上去，面板会把「查不到」渲染成「就是没有」，
+那正是「坏数据显示成好消息」，比不显示更坏。
+
+**待真机验证**：面板是否真的显示书名与待决闸门。这一条只有真机能作数。

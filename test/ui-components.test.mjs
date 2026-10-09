@@ -201,6 +201,53 @@ await t("标准 5：多书场景只渲染当前这一本", () => {
   assert.ok(!s.includes("乙书"), "多书时别把整本列表摊到徽标上");
 });
 
+// ── 会话投影：数据通路的最后一环 ────────────────────────────────────────
+// 这一环以前是断的：client.js 的 inject 永远返回 {}，面板永远「数据不足」。
+// 宿主给每个 slot 组件发的 standardProps 里本来就有 useProjection
+// （宿主自带的 TodoDock 就是 useProjection("todos")），所以组件直接调它。
+
+await t("面板从会话投影拿数据：徽标显示真实书名，不再说「未连接书仓」", () => {
+  const useProjection = (key) =>
+    key === "novelForge"
+      ? { bookStatus: { ok: true, status: { title: "灯下无归人", finalizedChapterCount: 3, lastChapter: 3 } } }
+      : undefined;
+  const s = textOf(ForgeBadge({ useProjection }));
+  assert.match(s, /灯下无归人/);
+  assert.doesNotMatch(s, /未连接书仓/);
+});
+
+await t("投影在但里面没有书仓时，仍然老实说「未连接书仓」，不假装正常", () => {
+  assert.match(textOf(ForgeBadge({ useProjection: () => ({}) })), /未连接书仓/);
+});
+
+await t("工作台面板从投影拿到材料就绪度与待决闸门", () => {
+  const useProjection = () => ({
+    bookStatus: { ok: true, status: { title: "灯下无归人", finalizedChapterCount: 0 } },
+    materials: {
+      segments: [
+        { id: "task", name: "任务", status: "ready" },
+        { id: "prev", name: "上一章", status: "missing" },
+      ],
+    },
+    director: { ok: true, node: "design.skeleton", requiresDecision: true, question: "骨架走向哪一版？" },
+    gateList: [{ ok: true, node: "design.skeleton", level: "stop", requiresDecision: true, question: "骨架走向哪一版？" }],
+  });
+  const s = textOf(WorkspacePanel({ useProjection }));
+  assert.match(s, /1\/2/, "材料就绪度应当是 1/2");
+  assert.match(s, /骨架走向哪一版/, "待决闸门必须出现在面板上——那是唯一必须人拍板的东西");
+});
+
+await t("宿主没给 useProjection 时退回 props.view，不崩也不乱报", () => {
+  const s = textOf(ForgeBadge({ view: { state: "ok", tone: "normal", label: "旧路径", detail: "照旧" } }));
+  assert.match(s, /旧路径/);
+});
+
+await t("useProjection 抛异常时不许把面板带崩", () => {
+  const useProjection = () => { throw new Error("宿主投影坏了"); };
+  const s = textOf(ForgeBadge({ useProjection }));
+  assert.ok(typeof s === "string" && s.length > 0, "面板必须退化成一行文本，而不是抛出去");
+});
+
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {
   for (const f of failures) console.log(`  - ${f.name}: ${f.error?.message ?? f.error}`);
