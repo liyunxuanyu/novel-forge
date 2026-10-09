@@ -327,7 +327,23 @@ const scenarios = [
 
 for (const [name, args] of scenarios) {
   try {
-    await checkReal(name, args);
+    const res = await checkReal(name, args);
+    // 产出正文必须真的交回调用方。
+    //
+    // 这是真机上发现的断链：forge_fanout_run / forge_director_run 派完子代理、
+    // 拿回了正文，render 却只报「成功：skeleton（2259 字）」——正文一个字都没交出来。
+    // 下一步 forge_artifact_candidate / forge_import_draft 要的就是这段正文，
+    // 而模型除了 render 没有任何别的渠道能拿到它。子代理白写了，链子断在交回这一步。
+    // 所以这里对**所有**工具统一立规：只要 done 里有正文，render 就必须带上它。
+    const texts = Array.isArray(res?.done)
+      ? res.done.map((d) => (typeof d === "string" ? d : d?.text)).filter((t) => typeof t === "string" && t !== "")
+      : [];
+    if (texts.length > 0) {
+      const out = (all.get(name).output.render(args, res) ?? []).map((b) => b?.text ?? "").join("");
+      for (const t of texts) {
+        assert.ok(out.includes(t), `${name} 的 render 没把产出正文交回调用方（丢了 ${t.length} 字）`);
+      }
+    }
     passed++;
     console.log(`  PASS  ${name} 返回值过宿主校验`);
   } catch (error) {
