@@ -577,6 +577,40 @@ Biz 偏**角色向**（这类人物怎么推动情节）· Scriptor 偏**机制�
 
 分两层，第二层要模型中转站：
 
+**A11. 真引擎契约对照 —— 已完成（6 例）：抓到一个会让线上全灭的洞**
+
+切到真机之后，作者看到面板是「数据不足」。查面板时顺手往下追了一层，
+撞上一个比 UI 大得多的问题：
+
+**派发层的三个脚本与 `engine.start()` 的调用形状，从来没有被真引擎跑过。**
+
+离线测试用的假引擎直接回写死的 `done`，**连 `meta` 都不看**。
+于是 `dispatch.js` 里两处 `engine.start({ ..., meta: { name: ... } })`
+长期少发一个字段也没人发现。而真引擎（`dsh-workflow-ptc`）的
+`start()` 第一件事就是 `validateMeta`：
+
+```js
+// dsh-workflow-ptc/lib/index.js:482-483
+if (typeof record.name !== "string" || record.name.length === 0) violations.push("meta.name must be a non-empty string");
+if (typeof record.description !== "string" || record.description.length === 0) violations.push("meta.description must be a non-empty string");
+```
+
+**`meta.description` 必填，我从来没发过。** 缺了就在发布 run 之前同步抛
+`META_INVALID`——**线上每一次派发都是全灭，一章都写不出来**，
+而 516 项离线断言照样全绿。
+
+这类洞最难缠的地方在于：离线测试能测的只有「我传给引擎的东西」，
+**测不到「引擎会怎么处置它」**。假引擎替引擎做了宽容的假设。
+
+**修法**：`runMeta(label)` 同时给 `name` 与 `description`，两个 `start` 调用点都走它。
+
+**防复发**：`workflow-contract.test.mjs` 里照抄了 `validateMetaShape` 的规则，
+造一个会挑毛病的假引擎——缺 `description` 照样同步抛 `META_INVALID`。
+再加一条：三个脚本脚本体都过一遍 `new vm.Script(...)` 编译
+（真引擎 `assertBodyParses` 也是这么干的，语法错同样死在 start 之前）。
+
+> 这也解释了为什么「只跑离线」和「真机跑一遍」是两件事：
+> 契约错位只能靠对着真实现读代码发现，或者等第一次真跑。
 **A10. 面板数据通路 —— 调查结论：被宿主约束挡住（0 例新增）**
 ### 复查：现有 host API 也接不上（作者追问后的二次确认）
 
@@ -862,7 +896,7 @@ A-1/A-2/A-3/A-4/A-5 五条通过标准全部达成，其中两条是这条测试
 
 ## 累计
 
-516 项断言（一 33 + 二 44 + 三 58 + 四 28 + 五 68 + 六 44 + 七 60 + 八 51 + 九 45 + 十 83 + 约定 2）。40 个工具。
+522 项断言（一 33 + 二 44 + 三 58 + 四 28 + 五 68 + 六 44 + 七 60 + 八 51 + 九 45 + 十 89 + 约定 2）。40 个工具。
 39 个工具。测试入口 `pwsh -File scripts/test.ps1`。
 
 ---
