@@ -55,7 +55,7 @@ function runWith(values) {
   const ctx = { logger, get: (n) => (n === "workflowEngine" ? engineReturning(values) : undefined) };
   const tools = directorTools(ctx, () => ws);
   const run = tools.find((d) => d.name === "forge_director_run");
-  return defineTool(run).execute({ title: BOOK, context: { draftText: "沈昭张口。" } }, { signal: new AbortController().signal });
+  return defineTool(run).execute({ title: BOOK, context: { draftText: "沈昭张口。", volumePlan: "卷一：开口", contract: "不许虚构设定。" } }, { signal: new AbortController().signal });
 }
 
 console.log(`阶段十 · 空白输出闸门测试\n沙盒: ${ws}\n`);
@@ -143,7 +143,7 @@ await t("端到端：审读交白卷时，这一章不会被零发现项放行",
   await call("forge_dispatch_review", { title: BOOK, chapter: 1 });
 
   // 审读子代理交白卷
-  const review = await call("forge_director_run", { title: BOOK, context: { draftText: "沈昭张口。" } });
+  const review = await call("forge_director_run", { title: BOOK, context: { draftText: "沈昭张口。", volumePlan: "卷一：开口", contract: "不许虚构设定。" } });
   assert.equal(review.ok, false, "白卷审读必须报错：" + JSON.stringify(review));
   assert.equal(review.stage, "empty-run", JSON.stringify(review));
 

@@ -145,7 +145,7 @@ async function driveChapter(num) {
   let n = await step(`ch${num} 细纲`);
   assert.equal(n.node, "chapter.outline_confirm", `第 ${num} 章实际 ${n.node}`);
   assert.equal(n.proceed, true, "章细纲是 auto");
-  const outline = await call("forge_director_run", { title: BOOK, context: { outlineBrief: "沈昭开口", volumePlan: "卷一：开口" } });
+  const outline = await call("forge_director_run", { title: BOOK, context: { outlineBrief: "沈昭开口", volumePlan: "卷一：开口", contract: "不许凭空虚构设定。" } });
   assert.equal(outline.ok, true, JSON.stringify(outline));
   assert.ok(outline.done[0].includes("〔硬〕"), "细纲要带约束等级标记");
   assert.equal((await call("forge_outline_draft", { title: BOOK, chapter: num, volume: VOL, body: outline.done[0] })).ok, true);
@@ -161,14 +161,14 @@ async function driveChapter(num) {
   // 第 2 章故意让引擎炸一次：链必须降级而不是崩，引擎恢复后重试要能接着走。
   if (num === 2) {
     engine.failNext = true;
-    const boom = await call("forge_director_run", { title: BOOK, context: { draftText: "写第2章" } });
+    const boom = await call("forge_director_run", { title: BOOK, context: { taskText: "写第2章" } });
     assert.equal(boom.ok, false, "引擎炸了不能算成功");
     assert.equal(boom.stage, "run-threw", JSON.stringify(boom));
     assert.match(boom.detail, /网络断了/);
     observedEngineFailure = true;
   }
 
-  const draft = await call("forge_director_run", { title: BOOK, context: { draftText: `写第${num}章` } });
+  const draft = await call("forge_director_run", { title: BOOK, context: { taskText: `写第${num}章` } });
   assert.equal(draft.ok, true, JSON.stringify(draft));
   assert.equal((await call("forge_import_draft", { title: BOOK, chapter: num, body: draft.done[0], origin: "AI 起草" })).ok, true);
 
@@ -192,7 +192,7 @@ async function driveChapter(num) {
       const after = await step(`ch${num} 审读通过后`);
       return settleChapter(num, after, body);
     }
-    const fixed = await call("forge_director_run", { title: BOOK, context: { findings: parsed } });
+    const fixed = await call("forge_director_run", { title: BOOK, context: { findings: parsed, draftText: body } });
     assert.equal(fixed.ok, true, JSON.stringify(fixed));
     assert.equal((await call("forge_import_draft", { title: BOOK, chapter: num, body: fixed.done[0], origin: "改稿" })).ok, true);
     body = fixed.done[0];

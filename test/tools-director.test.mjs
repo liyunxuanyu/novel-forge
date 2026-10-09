@@ -100,7 +100,8 @@ await t("细纲步骤生成自包含任务文本，真源内容真的进去了",
 });
 
 await t("任务文本不含绝对路径", async () => {
-  const r = await call("forge_director_plan", { title: BOOK, context: {} });
+  const r = await call("forge_director_plan", { title: BOOK, context: { outlineBrief: "开口", volumePlan: "卷一目标：沈昭开口。", contract: "不要系统流" } });
+  assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.prompt.includes(projectRoot), false);
   assert.equal(r.prompt.includes("D:\\"), false);
 });
