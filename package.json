@@ -1,0 +1,46 @@
+{
+  "name": "dsh-novel-forge",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.bundle.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-tool"
+      ]
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/client.bundle.js",
+    "lib/ui-model.js",
+    "lib/ui-components.js",
+    "skills/**/*",
+    "cordis.patch.yml"
+  ],
+  "description": "Novel Forge：融合 Scriptor / oh-story / Biz Novel Studio 三家长篇小说生产能力的 DSH 插件",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": "^22.19.0 || ^24.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-skill-filesystem": "0.2.0-rc.2",
+    "react": "18.3.1"
+  }
+}
