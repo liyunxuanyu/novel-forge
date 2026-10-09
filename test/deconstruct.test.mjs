@@ -23,7 +23,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, ".test-sandbox", `dec-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `dec-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 
 console.log(`阶段七 · 拆书管道测试\n沙盒: ${ws}\n`);
@@ -308,8 +308,8 @@ await t("按类别筛选机制，三类各取所需", async () => {
   assert.equal(onlyRole.length, 1);
   assert.equal(onlyRole[0].name, "角色向一条");
 });
-await fs.rm(path.join(projectRoot, ".test-sandbox"), { recursive: true, force: true });
-await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, ".test-sandbox")), false));
+await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
+await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {

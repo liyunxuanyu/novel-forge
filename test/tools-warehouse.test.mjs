@@ -25,7 +25,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sandbox = path.join(projectRoot, ".test-sandbox", `tool-${randomBytes(4).toString("hex")}`);
+const sandbox = path.join(projectRoot, "..", ".forge-test-sandbox", `tool-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(sandbox, { recursive: true });
 
 // defineTool 会编译 schema 并包一层 execute/渲染，模拟宿主的最小行为
@@ -181,7 +181,7 @@ await t("走完建书→写骨架→写细纲→定稿，状态可从 Git 读出
   assert.equal(byName.get("forge_book_status").output.render({}, s)[0].text.includes("已定稿 1 章"), true);
 });
 
-await fs.rm(path.join(projectRoot, ".test-sandbox"), { recursive: true, force: true });
+await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
 await t("沙盒已清理", () => assert.equal(fs, fs));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);

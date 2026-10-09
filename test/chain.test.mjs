@@ -37,7 +37,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, ".test-sandbox", `chain-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `chain-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const BOOK = "全链试炼";
 const VOL = 1;

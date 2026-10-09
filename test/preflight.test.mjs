@@ -19,6 +19,7 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 
 import { createEntry } from "../lib/client.js";
+import { git } from "../lib/warehouse.js";
 
 // ENTRIES 是 createEntry() 的返回值，不是顶层导出。
 // 这里只借它拿 slot 名，不需要真的造元素。
@@ -64,6 +65,8 @@ async function hostRoot() {
   e.code = "SKIP_HOST";
   throw e;
 }
+
+
 
 console.log(`阶段十 · 加载体检\n包: ${pkg.name}@${pkg.version}\n`);
 
@@ -228,6 +231,19 @@ await t("宿主入口：导入、注册、卸载全通", async () => {
   assert.equal(registered.length, 40, `工具数应当是 40，实际 ${registered.length}`);
   assert.ok(effects.length > 0, "卸载钩子必须登记，否则重复装载会叠加");
   for (const fn of effects) await fn();
+});
+
+// ── 测试沙盒必须住在插件仓库之外 ──────────────────────────────────────────
+//
+// 插件源码自建 Git 仓库之后，沙盒若留在树内，initWorkspace 的嵌套检查会把
+// 17 个测试文件全部拒掉（nested-in-other-repo）。那条检查是对的——
+// 不该为测试放宽它。所以沙盒搬出去了，这里钉住，免得又被挪回来。
+await t("测试沙盒住在插件仓库之外（挪回来会静默废掉半个套件）", async () => {
+  const sandboxRoot = path.join(projectRoot, "..", ".forge-test-sandbox");
+  // 每轮测试都会把沙盒清空，所以这里要先把它建出来，git 才有 cwd 可用。
+  await fs.mkdir(sandboxRoot, { recursive: true });
+  const top = await git(["rev-parse", "--show-toplevel"], sandboxRoot);
+  assert.equal(top.ok, false, `${sandboxRoot} 落在另一个 Git 仓库（${String(top.stdout).trim()}）内部，initWorkspace 会拒绝初始化。`);
 });
 
 console.log(`\n通过 ${passed}，跳过 ${skipped}，失败 ${failures.length}`);

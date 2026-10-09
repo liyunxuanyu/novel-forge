@@ -3,3 +3,6 @@ node_modules/
 .DS_Store
 .test-logs/
 .test-sandbox/
+# 沙盒已搬出源码树（见下）。留着这条只为防手抖建回来。
+# 原因：插件源码现在是 Git 仓库，沙盒若留在树内会被
+# initWorkspace 的嵌套检查拒绝——那条检查是对的，不该为测试放宽。

@@ -24,7 +24,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, ".test-sandbox", `styl-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `styl-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const BOOK = "雨夜剑客";
 const CH1 = ["雨下了三天。", "他站在门口，没进去。", "守门人认得他，假装不认得。"].join("\n");
@@ -131,8 +131,8 @@ await t("没有构想快照时拒绝扫榜", async () => {
   assert.equal(r.stage, "no-concept");
 });
 
-await fs.rm(path.join(projectRoot, ".test-sandbox"), { recursive: true, force: true });
-await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, ".test-sandbox")), false));
+await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
+await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {

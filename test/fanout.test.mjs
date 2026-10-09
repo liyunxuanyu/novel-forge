@@ -23,7 +23,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, ".test-sandbox", `fan-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `fan-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const BOOK = "雨夜剑客";
 
@@ -186,7 +186,7 @@ await t("骨架里没有索引节就拒绝核对，不瞎猜", async () => {
 });
 
 await t("没有骨架时一致性检查给出明确指引", async () => {
-  const ws2 = path.join(projectRoot, ".test-sandbox", `fan2-${randomBytes(3).toString("hex")}`);
+  const ws2 = path.join(projectRoot, "..", ".forge-test-sandbox", `fan2-${randomBytes(3).toString("hex")}`);
   await fs.mkdir(ws2, { recursive: true });
   await wh.initWorkspace(ws2);
   await wh.createBook(ws2, {
@@ -239,8 +239,8 @@ await t("卷规划落真源后，全部工件都齐了", async () => {
   assert.deepEqual(p.blocked, []);
 });
 
-await fs.rm(path.join(projectRoot, ".test-sandbox"), { recursive: true, force: true });
-await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, ".test-sandbox")), false));
+await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
+await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {

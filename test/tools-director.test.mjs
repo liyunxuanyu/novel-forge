@@ -25,7 +25,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, ".test-sandbox", `dtool-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `dtool-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const BOOK = "雨夜剑客";
 
@@ -243,7 +243,7 @@ await t("不存在的书给出明确报错", async () => {
   assert.equal(r.stage, "no-book");
 });
 
-await fs.rm(path.join(projectRoot, ".test-sandbox"), { recursive: true, force: true });
+await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
 await t("沙盒已清理", () => assert.ok(true));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);

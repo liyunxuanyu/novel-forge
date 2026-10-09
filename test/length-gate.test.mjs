@@ -33,7 +33,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, ".test-sandbox", `len-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `len-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const BOOK = "篇幅试炼";
 const logger = { info() {}, warn() {}, error() {} };
