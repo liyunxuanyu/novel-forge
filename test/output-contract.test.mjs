@@ -118,7 +118,8 @@ const fakeEngine = {
 const fakeSubagents = {
   list: () => ["spawn"],
   async start() {
-    return { id: "s1", result: Promise.resolve({ stopReason: "completed", output: "生成的内容" }), async dispose() {} };
+    // output 的真实类型是 ContentBlock[]，替身必须照做。
+    return { id: "s1", result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "生成的内容" }] }), async dispose() {} };
   },
 };
 const getRuntime = () => ({ engine: fakeEngine, subagents: fakeSubagents });

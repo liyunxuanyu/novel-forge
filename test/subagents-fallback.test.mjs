@@ -28,7 +28,7 @@ async function t(name, fn) {
 console.log("阶段十 · subagents 退路测试（假服务，不调模型）\n");
 
 /** 假 subagents 服务。契约照抄 @deepseek-ai/dsh-tool-subagent 的真实用法。 */
-function fakeSubagents({ output = "结果", stopReason = "completed", throwOnStart = false, list = ["spawn", "fork"] } = {}) {
+function fakeSubagents({ output = "结果", blocks, stopReason = "completed", throwOnStart = false, list = ["spawn", "fork"] } = {}) {
   const calls = [];
   const runs = [];
   return {
@@ -41,7 +41,10 @@ function fakeSubagents({ output = "结果", stopReason = "completed", throwOnSta
       const run = {
         id: `run-${calls.length}`,
         disposed: false,
-        result: Promise.resolve({ stopReason, output }),
+        // 忠实替身：SubagentResult.output 的真实类型是 ContentBlock[]，不是字符串。
+        // 之前这里回的是裸字符串，于是「把数组当文本交回去」的 bug 被假替身遮住了，
+        // 一直到真机才报 value.done[0].text must be a string。
+        result: Promise.resolve({ stopReason, output: blocks ?? [{ type: "text", text: output }] }),
         async dispose() { this.disposed = true; },
       };
       runs.push(run);
@@ -83,6 +86,19 @@ await t("请求形状照抄宿主：prompt 是 [{type,text}]，带 parent", asyn
   assert.equal(req.label, "draft");
 });
 
+await t("output 是 ContentBlock[]：只取 text 块，忽略别的块", async () => {
+  const sa = fakeSubagents({ blocks: [{ type: "thinking", text: "想一下" }, { type: "text", text: "甲" }, { type: "text", text: "乙" }] });
+  const r = await runRound(undefined, { ...OPTS, subagents: sa });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.done, ["甲乙"]);
+});
+
+await t("output 不是数组时按空处理，绝不 join 出 [object Object]", async () => {
+  const sa = fakeSubagents({ blocks: { type: "text", text: "甲" } });
+  const r = await runRound(undefined, { ...OPTS, subagents: sa });
+  assert.equal(r.ok, false, "拿不到文本就该当失败，不能交回看着像文本的垃圾");
+  assert.equal(r.done.length, 0);
+});
 // ── 失败路径（重点） ────────────────────────────────────────────────────
 await t("子代理拒答：算失败，绝不能算一份合格产出", async () => {
   const sa = fakeSubagents({ stopReason: "refusal", output: "我不写这个" });
