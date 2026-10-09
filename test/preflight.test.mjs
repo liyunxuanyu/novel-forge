@@ -193,7 +193,7 @@ await t("客户端 bundle 真能跑：注册挂上，缺 slots 不炸，卸载�
   };
   const ctx = { logger: { info() {}, warn() {}, error() {} }, effect(fn) { fn(); }, get: (n) => (n === "slots" ? slots : undefined) };
   await disposer.apply(ctx, {}, {});
-  assert.equal(mounted.length, 2, `应当挂两个面板，实际 ${mounted.length}`);
+  assert.equal(mounted.length, 1, `应当挂一个面板（右上角徽标），实际 ${mounted.length}`);
 });
 
 // ── 四、宿主入口真跑 ──────────────────────────────────────────

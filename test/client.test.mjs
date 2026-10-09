@@ -74,11 +74,11 @@ const DECLARED = {
 
 console.log("阶段九 · 客户端注册测试\n");
 
-await t("标准 6：挂在两个 list 型 slot 上，追加而非占用", () => {
+await t("标准 6：挂在 list 型 slot 上，追加而非占用", () => {
   const slots = makeSlots(DECLARED);
   const ctx = makeCtx(slots);
   const dispose = apply(ctx);
-  assert.equal(slots.log.length, 2);
+  assert.equal(slots.log.length, 1);
   const rec = slots.entriesOf("conversation.session.header.utilities");
   assert.equal(rec.length, 1, "utilities 上应有一条");
   assert.notEqual(rec[0].id, undefined, "list 型必须给 id");
@@ -120,7 +120,7 @@ await t("标准 3：注册描述符非法时不拖垮另一个面板", () => {
   assert.doesNotThrow(() => { out = apply(ctx); });
   assert.equal(ctx.warns.length, 1);
   assert.match(ctx.warns[0], /注册失败/);
-  assert.match(ctx.infos[0], /1\/2 个面板挂载/, "要如实报挂了几个");
+  assert.match(ctx.infos[0], /0\/1 个面板挂载/, "要如实报挂了几个");
   assert.equal(typeof out, "function");
   out();
 });
@@ -130,9 +130,9 @@ await t("slot 未被声明时安静跳过，不抛", () => {
   let out;
   assert.doesNotThrow(() => { out = apply(ctx); });
   assert.equal(slots.log.length, 0);
-  assert.match(ctx.infos[0], /0\/2 个面板挂载/);
+  assert.match(ctx.infos[0], /0\/1 个面板挂载/);
 });
-await t("两个面板的 id 不重复", () => {
+await t("面板的 id 不重复", () => {
   assert.equal(new Set(ENTRIES.map((e) => e.id)).size, ENTRIES.length);
 });
 

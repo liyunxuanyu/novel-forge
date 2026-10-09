@@ -1343,3 +1343,29 @@ A-1/A-2/A-3/A-4/A-5 五条通过标准全部达成，其中两条是这条测试
 那正是「坏数据显示成好消息」，比不显示更坏。
 
 **待真机验证**：面板是否真的显示书名与待决闸门。这一条只有真机能作数。
+
+---
+
+## 书架：位置与 slot 选型（待做）
+
+真机确认数据通路已通：右上角徽标显示《试跑·灯下无归人 · 还没定稿章节》，
+输入框上方面板显示书名 + 十段材料/当前动作/闸门。
+（十段材料与当前动作显示「数据不足」是**诚实的**——那两个工具本次会话还没跑过。）
+
+作者对位置的判断：「不要放这里，后面放书架里面」。
+`conversation.input.dock` 那一整块压在输入区上方，太吵。**已先摘掉**，只留右上角徽标。
+
+书架该落哪个 slot，读 slot 契约表（`dsh-cordis-client-runner/lib/client.js`）的结果：
+
+| 候选 | 契约 | 能不能读会话投影 |
+|---|---|---|
+| `sidebar.panellist`（图标）+ `main`（面板体，key 相同） | panellist `replaceRisk: none`，occupants 是插件管理器的 PluginsPanelIcon 与日程的 TaskManagerIcon | **不能**。`main` 的 standardProps 是 useResource / useWorkspaces / usePanelInfo / useSessions / useSessionStatus / useSessionRetainInfo，**没有 useProjection** |
+| `sidebar.right.pane.tab` | scope: session，`kind: keyed`，按 tab.kind 的 id 派发 | **能**。standardProps 里有 `useProjection: UseProjection` |
+
+**结论：书架落 `sidebar.right.pane.tab`**（scriptor 也是走这条）。
+`sidebar.panellist` + `main` 那条虽然更像「左侧边栏里的一栏」，
+但面板体读不到会话投影，得另开一条取数通道，不值当。
+
+组件不用重写：`WorkspacePanel` 已经从 `useProjection("novelForge")` 取数，
+换个 slot 挂上去就行。书架要多的是「列出所有书」——
+`forge_book_status` 不带 title 时返回的就是全部书，投影里已经有 `books` 字段。

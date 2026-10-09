@@ -100,9 +100,9 @@ await t("真跑起来：react 从宿主 require 来，不静态依赖", () => {
   assert.equal(typeof mod.apply, "function");
   assert.equal(mod.name, "novel-forge-client");
   assert.equal(Array.isArray(mod.ENTRIES), true);
-  assert.equal(mod.ENTRIES.length, 2);
+  assert.equal(mod.ENTRIES.length, 1);
 });
-await t("bundle 出来的 apply 真能挂上两个面板", () => {
+await t("bundle 出来的 apply 真能挂上面板", () => {
   const { exports: mod } = loadBundle(code);
   const slots = makeSlots(DECLARED);
   const infos = [];
@@ -112,8 +112,7 @@ await t("bundle 出来的 apply 真能挂上两个面板", () => {
   };
   const dispose = mod.apply(ctx);
   assert.equal(slots.entriesOf("conversation.session.header.utilities").length, 1);
-  assert.equal(slots.entriesOf("conversation.input.dock").length, 1);
-  assert.match(infos[0], /2\/2 个面板挂载/);
+  assert.match(infos[0], /1\/1 个面板挂载/);
   assert.equal(typeof dispose, "function");
 });
 await t("宿主没有 slots 时 bundle 也不炸（工具链不受影响）", () => {
@@ -133,17 +132,17 @@ await t("slot 没声明时不谎报挂上了几个", () => {
     get: () => ({ inject: () => ({ dispose() {} }), register: () => { throw new Error("x"); } }),
   };
   mod.apply(ctx);
-  assert.match(infos[0], /0\/2 个面板挂载/);
+  assert.match(infos[0], /0\/1 个面板挂载/);
 });
 await t("重新 require react 不会拿到两个 React 实例", () => {
   const { exports: mod } = loadBundle(code);
   const el = mod.ENTRIES.length;
-  assert.equal(el, 2);
+  assert.equal(el, 1);
   // 组件必须是宿主那个 createElement 造出来的，不能是自带副本
   const slots = makeSlots(DECLARED);
   const ctx = { logger: { info: () => {}, warn: () => {} }, get: (n) => (n === "slots" ? slots : undefined) };
   mod.apply(ctx);
-  const entry = slots.entriesOf("conversation.input.dock")[0];
+  const entry = slots.entriesOf("conversation.session.header.utilities")[0];
   const node = entry.component({ view: { state: "insufficient" } });
   assert.equal(typeof node.type, "string", "组件确实在造宿主 React 认识的元素");
 });
