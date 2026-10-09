@@ -42,7 +42,12 @@ function makeCtx() {
       cb({ logger: ctx.logger, get: ctx.get, plugin: ctx.plugin, effect: ctx.effect, on: ctx.on });
       return { dispose() {} };
     },
-    effect() { return () => {}; },
+    // 真 cordis：**立刻执行** fn，把 fn 返回的函数登记为卸载清理。
+    // 这个桩以前不执行 fn，于是「把清理写进 callback」的 bug 被遮住了。
+    effect(fn) {
+      const undo = fn();
+      return () => { if (typeof undo === "function") undo(); };
+    },
     on: () => () => {},
   };
   return ctx;

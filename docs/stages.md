@@ -577,6 +577,127 @@ Biz 偏**角色向**（这类人物怎么推动情节）· Scriptor 偏**机制�
 
 分两层，第二层要模型中转站：
 
+**A15. ctx.effect 接缝对照 —— 已完成：抓到第六个洞，而且是「插件看着加载了、其实一个工具都没有」的那个**
+
+这个洞解释了本会话一直挂着的一个疑问：**为什么工具表里一个 `forge_*` 都没有，
+插件却明显是加载了的**（面板渲染出来了，工作区上下文「目前还没有书」也是插件给的）。
+
+### 真契约
+
+`@deepseek-ai/cordis` 的 `lib/index.js:1169` 定义：
+
+```js
+effect(execute, label = "anonymous") { … }
+```
+
+`_execute` 里（`:1142-1143`）：
+
+```js
+const effect = runner.execute.call(this);
+if (typeof effect === "function") return runner.collect(effect);
+```
+
+**`execute` 是立刻执行的「建立」，它返回的函数才是「清理」。**
+
+### 我写成了什么
+
+```js
+const disposers = registered.map((def) => tools.register(def));
+ctx.logger.info(`[novel-forge] 工具已注册 ${disposers.length} 个：…`);
+
+ctx.effect(() => {
+  for (const dispose of disposers) {
+    if (typeof dispose === "function") dispose();
+  }
+}, "novel-forge:tools");
+```
+
+把**清理**写进了 callback，而且没有返回任何东西。真机上的实际时序是：
+
+1. 40 个工具注册成功
+2. 日志打印「工具已注册 40 个」← **就是这句话让人以为一切正常**
+3. `ctx.effect(...)` 立刻执行 callback → 40 个反注册器全部被调用 → **40 个工具当场注销**
+4. callback 返回 `undefined` → 连卸载钩子都没登记
+
+净效果：**暴露给模型的工具数是 0**，而日志说得像成功了。
+这也解释了为什么本会话的工具表里看不到 `forge_*`——
+不是宿主没刷新，是真的一个都没剩下。
+
+### 修法
+
+callback 改成「建立」，把清理 `return` 出去：
+
+```js
+ctx.effect(() => {
+  const disposers = registered.map((def) => tools.register(def));
+  ctx.logger.info(`[novel-forge] 工具已注册 ${disposers.length} 个：…`);
+  return () => {
+    for (const dispose of disposers) {
+      if (typeof dispose === "function") dispose();
+    }
+  };
+}, "novel-forge:tools");
+```
+
+### 为什么测试没抓到：桩比真宿主宽容，而且注释把错误认知写死了
+
+`test/apply.test.mjs` 开头原本写着：
+
+> `ctx.effect(fn)` 只「登记」清理函数，等插件卸载时才由 cordis 调用；
+> 桩若立即调用，会把刚注册的插件组件反向注销。
+
+**这句话正好说反了。** 桩按这个认知写成「只登记、不执行」，
+于是插件的错误写法在桩上永远表现为「一切正常」。
+这不只是漏测——注释把错误认知固化了下来，让后来的人（包括我）继续相信它。
+
+同一个病根在 `preflight.test.mjs` 里也有一份（`effect(fn) { effects.push(fn); }`），
+`failure-shape.test.mjs` 里也有一份（`effect() { return () => {}; }`，连 fn 都不跑）。
+
+### 修法：把桩改成忠实的，并加往返验证
+
+三个测试文件里的桩统一改成真语义：
+
+```js
+effect(fn, label) {
+  const undo = fn();        // 真 cordis：立刻执行
+  const record = { fn, label, undo };
+  effectFns.push(record);
+  return () => { … };
+}
+```
+
+`preflight.test.mjs` 里顺手把弱断言换成真正的往返验证——
+原来的 `assert.ok(effects.length > 0)` 即使 effect 返回 `undefined` 也照样通过：
+
+```js
+assert.ok(effects.every((fn) => typeof fn === "function"), …);
+for (const fn of effects) await fn();
+assert.equal(registered.length, 0, `卸载后应当一个工具都不剩，实际还剩 ${registered.length}`);
+```
+
+（为此把桩里 `register` 的反注册器从 `() => {}` 改成真的从数组里摘掉，
+否则「卸载」在桩上本来就是空操作，往返验证等于没验。）
+
+### 反证
+
+- 把 `lib/index.js` 退回错误写法 → `apply.test.mjs` 报 3 条失败
+  （「注册全部 40 个工具」直接挂）
+- 把 `return` 清理函数去掉 → `preflight.test.mjs` 报「宿主入口：导入、注册、卸载全通」失败
+
+两处都能抓住，才算这个桩真的忠实了。
+
+### 教训
+
+A11/A12/A13/A14 是「桩替宿主做了宽容假设」，这一轮是同一个病根的**第五种形态**，
+而且是最隐蔽的一种：**桩的宽容被注释合法化了**。
+一句「桩若立即调用会反向注销」把错误认知包装成了防御性设计，
+于是没有人再去核对 cordis 的真实语义。
+
+**写桩的时候，注释里每一句关于宿主行为的话，都应该能指到宿主源码的某一行。**
+指不到的，就是猜测；猜测要当场去验。
+
+---
+
 **A14. 输出契约对照 —— 已完成（49 + 5 例）：抓到第五个洞，也是最大的一个：130 个必填字段会让每条失败路径都抛异常**
 
 这一轮从一句我一直当成「没关系」的假设开始：**返回值不会被校验吧？**

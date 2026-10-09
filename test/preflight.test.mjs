@@ -191,7 +191,7 @@ await t("客户端 bundle 真能跑：注册挂上，缺 slots 不炸，卸载�
     inject: (_slot, fn) => { mounted.push(fn()); return () => {}; },
     register: () => ({}),
   };
-  const ctx = { logger: { info() {}, warn() {}, error() {} }, effect() {}, get: (n) => (n === "slots" ? slots : undefined) };
+  const ctx = { logger: { info() {}, warn() {}, error() {} }, effect(fn) { fn(); }, get: (n) => (n === "slots" ? slots : undefined) };
   await disposer.apply(ctx, {}, {});
   assert.equal(mounted.length, 2, `应当挂两个面板，实际 ${mounted.length}`);
 });
@@ -208,9 +208,9 @@ await t("宿主入口：导入、注册、卸载全通", async () => {
   const effects = [];
   const ctx = {
     logger: { info() {}, warn() {}, error() {} },
-    effect(fn) { effects.push(fn); },
+    effect(fn) { const undo = fn(); effects.push(undo); },
     get(n) {
-      if (n === "tools") return { register(t) { registered.push(t); return () => {}; } };
+      if (n === "tools") return { register(t) { registered.push(t); return () => { const i = registered.indexOf(t); if (i >= 0) registered.splice(i, 1); }; } };
       if (n === "skillfilesystem") return { mount() { return () => {}; } };
       return undefined;
     },
@@ -230,7 +230,12 @@ await t("宿主入口：导入、注册、卸载全通", async () => {
   assert.deepEqual(bad, [], `这些工具有问题：\n${bad.join("\n")}`);
   assert.equal(registered.length, 40, `工具数应当是 40，实际 ${registered.length}`);
   assert.ok(effects.length > 0, "卸载钩子必须登记，否则重复装载会叠加");
+  // 每个 effect 都必须**返回**清理函数：cordis 只收集返回的那个
+  // （lib/index.js:1142-1143）。返回 undefined 就等于没有卸载钩子。
+  assert.ok(effects.every((fn) => typeof fn === "function"), `每个 effect 都要返回清理函数，实际：${effects.map((f) => typeof f).join(",")}`);
+  // 往返验证：跑一遍卸载，工具应当真的被摘干净
   for (const fn of effects) await fn();
+  assert.equal(registered.length, 0, `卸载后应当一个工具都不剩，实际还剩 ${registered.length}`);
 });
 
 // ── 测试沙盒必须住在插件仓库之外 ──────────────────────────────────────────

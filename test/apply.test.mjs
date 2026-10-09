@@ -3,8 +3,12 @@
  *
  * 模拟 ctx 必须符合 cordis 语义，否则测出来的是桩的 bug 而不是插件的：
  *   - ctx.plugin / ctx.inject 是独立能力
- *   - ctx.effect(fn) 只「登记」清理函数，等插件卸载时才由 cordis 调用；
- *     桩若立即调用，会把刚注册的插件组件反向注销。
+ *   - ctx.effect(fn, label) **立刻执行** fn，把 fn **返回**的函数登记为卸载清理
+ *     （cordis lib/index.js:1142-1143：`const effect = runner.execute.call(this);
+ *      if (typeof effect === "function") return runner.collect(effect);`）。
+ *     这里曾经写成「只登记、不执行」，于是桩比真宿主宽容：
+ *     插件把清理写在 callback 里（而不是 return 出去）的 bug 被完全遮住——
+ *     真机上 40 个工具刚注册就被注销，日志却照样说「已注册 40 个」。
  */
 import { strict as assert } from "node:assert";
 
@@ -127,7 +131,11 @@ function makeCtx({ withTools = true, withSkills = true, withPlugin = true } = {}
     },
     // 只登记，不立即执行 —— 与 cordis 一致
     effect(fn, label) {
-      effectFns.push({ fn, label });
+      // 真 cordis 是「立刻执行 fn，收集它返回的清理函数」。桩必须照做，
+      // 否则测不出「把清理写进 callback」这类 bug。
+      const undo = fn();
+      const record = { fn, label, undo };
+      effectFns.push(record);
       return () => {
         const i = effectFns.findIndex((e) => e.fn === fn);
         if (i >= 0) effectFns.splice(i, 1);
@@ -136,9 +144,9 @@ function makeCtx({ withTools = true, withSkills = true, withPlugin = true } = {}
     on: () => () => {},
     // 测试专用：模拟插件卸载，触发已登记的清理
     async runEffects() {
+      // 卸载：跑每个 effect 返回的清理函数（fn 已经在 effect() 时执行过了）。
       for (const e of [...effectFns]) {
-        const undo = e.fn();
-        if (typeof undo === "function") undo();
+        if (typeof e.undo === "function") await e.undo();
       }
     },
   };
