@@ -59,8 +59,8 @@ function t(name, fn) {
 const EXEC = { agent: { session: { id: "s" } }, signal: new AbortController().signal };
 
 /** 拿一组工具的 schema 与 execute。 */
-function collect(maker, ctx, resolveRoot) {
-  const arr = maker(ctx, resolveRoot);
+function collect(maker, ctx, resolveRoot, extra) {
+  const arr = maker(ctx, resolveRoot, extra);
   // 顺序要紧：defineTool 先把 DSL 编译成 JSON Schema，relax 才改得动 required。
   // 反过来的话 relax 看到的是 DSL（没有顶层 required 数组），会原样返回。
   const map = arr instanceof Map ? arr : new Map(arr.map((d) => [d.name, relax(defineTool(d))]));
@@ -81,23 +81,54 @@ function violationsOf(def, value) {
 console.log("阶段十 · 输出契约对照测试（用宿主自己的校验器）\n");
 
 // ---- 建工作区与书仓，后面每个工具都要用到 ----
+// ---- 建工作区与书仓，后面每个工具都要用到 ----
 // 各模块第二个参数是工作区根解析器（跟已有测试一致），不是 ctx 上的服务。
 const fakeCtx = { logger: { info() {}, warn() {}, error() {} } };
 const resolveRoot = () => sandboxRoot;
-const ctx = {
-  workflowEngine: {
-    start() {
-      return { id: "r", result: Promise.resolve({ stopReason: "completed", value: { done: ["生成的内容"], failed: [] }, agentsStarted: 1 }), dispose() {} };
-    },
+
+// 假运行时：引擎与 subagents 都给。
+//
+// 这里以前是 `const ctx = { workflowEngine: {...} }`，但 collect() 传的是 fakeCtx，
+// 那个 ctx 从头到尾没人用 —— 于是所有派发类工具都走 no-engine 失败路径，
+// done / failed 恒为空数组，**条目级 schema 从来没被校验过**。
+// 真机就是在那里报的：「value.done[0].ok is not a declared property」。
+// 现在把运行时真的接进去，让成功路径也被走到。
+// 假引擎必须按**脚本**回不同形状，否则就不是忠实的替身：
+//   runRound 的脚本回 [文本]
+//   fanout 的脚本回 [{id, ok, text}]
+// 之前一律回 [文本]，于是 fanout 的条目形状从来没被校验到。
+const fakeEngine = {
+  start(spec) {
+    const isFanout = Array.isArray(spec?.args?.jobs);
+    // 故意留一份失败：done 与 failed 的**条目级** schema 都要被走到。
+    // 只回成功的话，failed[].ok 这类字段永远校验不到——真机上一轮就是这么漏的。
+    const value = isFanout
+      ? {
+          done: spec.args.jobs.slice(1).map((j) => ({ id: j.id, ok: true, text: "生成的内容" })),
+          failed: spec.args.jobs.slice(0, 1).map((j) => ({ id: j.id, ok: false, reason: "假失败：工件没派成" })),
+        }
+      : { done: ["生成的内容"], failed: [{ ok: false, index: 0, reason: "假失败：子代理没交回结果" }] };
+    return {
+      id: "r",
+      result: Promise.resolve({ stopReason: "completed", value, agentsStarted: value.done.length }),
+      dispose() {},
+    };
   },
 };
+const fakeSubagents = {
+  list: () => ["spawn"],
+  async start() {
+    return { id: "s1", result: Promise.resolve({ stopReason: "completed", output: "生成的内容" }), async dispose() {} };
+  },
+};
+const getRuntime = () => ({ engine: fakeEngine, subagents: fakeSubagents });
 
 const all = new Map([
   ...collect((m, r) => warehouseTools(m, r ?? resolveRoot), fakeCtx, resolveRoot),
   ...collect(chapterTools, fakeCtx, resolveRoot),
-  ...collect(directorTools, fakeCtx, resolveRoot),
-  ...collect(fanoutTools, fakeCtx, resolveRoot),
-  ...collect(deconstructTools, fakeCtx, resolveRoot),
+  ...collect(directorTools, fakeCtx, resolveRoot, getRuntime),
+  ...collect(fanoutTools, fakeCtx, resolveRoot, getRuntime),
+  ...collect(deconstructTools, fakeCtx, resolveRoot, getRuntime),
   ...collect(styleTools, fakeCtx, resolveRoot),
   ...collect(gateTools, fakeCtx, resolveRoot),
 ]);
