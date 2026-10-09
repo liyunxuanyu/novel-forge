@@ -147,12 +147,33 @@ t("每个工具的 render 都能吃一个空对象而不抛（宿主要先调 re
  * 每次都用**宿主自己的校验器**校一遍返回值。
  * schema 写错一个字段名，这里就会炸——而以前没有这类测试。
  */
+/**
+ * 照抄宿主 snapshotProjection 的判据：render 的返回值必须是**无损 JSON**。
+ * undefined、NaN、Infinity、函数——任何一样都会让宿主抛 ToolOutputError。
+ * 尤其 undefined：render 少写一个 return 就会踩，真机上极难定位。
+ */
+function assertLossless(label, value) {
+  if (value === undefined) throw new Error(`${label} 返回了 undefined —— 宿主 snapshotProjection 会抛 ToolOutputError`);
+  const walk = (x, p) => {
+    if (x === undefined) throw new Error(`${label} 在 ${p} 有 undefined`);
+    if (typeof x === "function") throw new Error(`${label} 在 ${p} 有函数`);
+    if (typeof x === "number" && !Number.isFinite(x)) throw new Error(`${label} 在 ${p} 有非有限数 ${x}`);
+    if (x !== null && typeof x === "object") {
+      for (const k of Object.keys(x)) walk(x[k], `${p}.${k}`);
+    }
+  };
+  walk(value, "$");
+}
+
 async function checkReal(name, args, exec = EXEC) {
   const def = all.get(name);
   assert.ok(def, `没有工具 ${name}`);
   const res = await def.execute(args, exec);
   const v = violationsOf(def, res);
   assert.deepEqual(v, [], `${name} 返回值违反自己的 output.schema：${JSON.stringify(v)}｜实际：${JSON.stringify(res)}`);
+  // 成功分支的 render 也要真跑一遍：以前只跑了 render({}, {})，
+  // 那基本只走到失败分支——成功分支返回 undefined 也发现不了。
+  assertLossless(`${name}.render`, def.output.render(args, res));
   return res;
 }
 
