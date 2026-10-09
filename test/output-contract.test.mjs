@@ -259,5 +259,38 @@ await fs.promises.rm(sandboxRoot, { recursive: true, force: true }).catch(() => 
 
 // 收尾这两行不能少：少了它，本测试即使有 FAIL 也不会让套件变红，
 // 等于一个「永远不会失败」的测试——比没有测试更糟。
+// ── forge_status 单独补测 ────────────────────────────────────────────────
+//
+// forge_status 内联在 lib/index.js 里，不在上面那 7 个工具模块中，所以之前的
+// 场景清单漏了它——而真机上它恰恰是**第一个**暴露 schema 漂移的工具：
+// services.detail 被声明成 additionalProperties:false 且不列任何属性，
+// 实际却是按服务名铺开的动态映射，于是宿主直接报
+// 「value.services.detail.tools is not a declared property」。
+//
+// 这里用真实的 apply() 把它取出来，跑一次真返回值过校验，堵上这个缺口。
+await (async () => {
+  const { apply: applyPlugin } = await import("../lib/index.js");
+  const captured = [];
+  const fakeCtx = {
+    logger: { info() {}, warn() {}, error() {} },
+    effect(fn) { const undo = fn(); return () => { if (typeof undo === "function") undo(); }; },
+    inject: (_deps, cb) => cb({ plugin: () => {} }),
+    plugin: () => {},
+    get(name) {
+      if (name === "tools") return { register(t) { captured.push(t); return () => {}; } };
+      if (name === "skills") return {};
+      if (name === "workspaceRegistry") return { list: () => [] };
+      return undefined;
+    },
+  };
+  await applyPlugin(fakeCtx, { verboseStartup: false });
+  const statusDef = captured.find((t) => t.name === "forge_status");
+  assert.ok(statusDef, "apply() 应当注册 forge_status");
+  const statusValue = await statusDef.execute({ deep: false }, {});
+  const sv = violationsOf(statusDef, statusValue);
+  assert.deepEqual(sv, [], `forge_status 返回值违反自己的 output.schema：${JSON.stringify(sv)}｜实际：${JSON.stringify(statusValue)}`);
+  assertLossless("forge_status.render", statusDef.output.render({ deep: false }, statusValue));
+})();
+
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) process.exitCode = 1;

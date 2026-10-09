@@ -203,6 +203,12 @@ await t("宿主入口：导入、注册、卸载全通", async () => {
   assert.equal(mod.name, "novel-forge", "cordis 插件 id 应当是 novel-forge");
   assert.ok(pkg.name.startsWith("dsh-"), "包名要带 dsh- 前缀，否则宿主不会当插件扫到");
   assert.equal(typeof mod.apply, "function");
+  // cordis 靠插件的 inject 决定「服务就绪前不调用 apply」
+  // （lib/index.js:1317-1328 的 _refresh；INACTIVE 时不走 _reload）。
+  // 不声明 inject 的话，apply 会在 tools 就绪前跑，插件只能记一条 warn 就退出，
+  // 而且**永远不会重试**——表现为「插件加载了但一个工具都没有」。
+  assert.ok(Array.isArray(mod.inject), "插件必须导出 inject，否则 cordis 不会等 tools 就绪");
+  assert.ok(mod.inject.includes("tools"), "inject 必须包含 tools（本插件的硬依赖）");
 
   const registered = [];
   const effects = [];
