@@ -577,6 +577,107 @@ Biz 偏**角色向**（这类人物怎么推动情节）· Scriptor 偏**机制�
 
 分两层，第二层要模型中转站：
 
+**A14. 输出契约对照 —— 已完成（49 + 5 例）：抓到第五个洞，也是最大的一个：130 个必填字段会让每条失败路径都抛异常**
+
+这一轮从一句我一直当成「没关系」的假设开始：**返回值不会被校验吧？**
+
+错了。`dsh-tools/lib/index.js:3541-3544`：
+
+```js
+createSuccessResult(exec, tool, candidate) {
+  const detached = snapshotToolValue(candidate);
+  const violations = validateJsonSchemaValue(tool.output.schema, detached, "value");
+  if (violations.length > 0) throw new ToolOutputError(tool.name, violations);
+  …
+}
+```
+
+而 `:3582-3584` 决定了它什么时候跑：
+
+```js
+if (result.isError) { …原样返回… }
+const normalized = this.createSuccessResult(exec, tool, result.value);
+```
+
+**只要 `isError` 是 false，返回值就过 `output.schema`。** 本插件的工具把
+`{ ok: false, stage, detail }` 当**正常返回**（不抛异常），所以失败路径同样过校验。
+
+于是问题来了：`forge_ref_plan` 的 schema 里 `batches` 和 `consentCleared` 是
+`required: true`，可失败时这两个字段根本不存在——宿主判定违规，抛
+`ToolOutputError`。作者看到的不是「参考库 id 只能用字母数字下划线横线」，
+而是一句工具内部错误。
+
+**这不是一个工具的毛病。** 探针扫了一遍：36 个工具、**130 个顶层必填字段**，
+条条失败路径都会踩。也就是说，真机上只要有一次输入不合法，
+本该是结构化失败的地方全变成异常。
+
+### 修法：顶层只留 ok 必填
+
+失败是一等分支，领域字段在失败时本来就不存在，那就**声明但不强制**。
+`defineTool` 之后 `output.schema` 已是编译好的 JSON Schema，所以在
+`lib/index.js` 的注册点统一改 `required`，一处覆盖全部工具：
+
+```js
+const relaxTopLevelRequired = (def) => {
+  const schema = def?.output?.schema;
+  if (!schema || schema.type !== "object" || !Array.isArray(schema.required)) return def;
+  const kept = schema.required.filter((k) => k === "ok");
+  const next = { ...schema };
+  if (kept.length > 0) next.required = kept; else delete next.required;
+  return { ...def, output: { ...def.output, schema: next } };
+};
+```
+
+顺带发现 `forge_status` 是唯一的异类：它**连 `ok` 字段都没有**，还有 8 个顶层必填。
+已补齐，与其余 39 个统一。
+
+### 广撒网跑真返回值，又抓到四类漂移
+
+`relax` 只解决「失败形状」。把能在离线环境造出合法输入的工具**真跑一遍**、
+每次都用宿主自己的 `validateJsonSchemaValue` 校返回值，又抓到：
+
+| 工具 | 代码返回 | schema 声明 | 后果 |
+|---|---|---|---|
+| `forge_book_status` | `lastChapter: null`、`recentCommits[].chapter: null` | `type: "string"` | 抛异常 |
+| `forge_book_status` | `hash`、`schema`、`createdAt` | 未声明 | `additionalProperties: false` 判违规 |
+| `forge_director_next` | `step: null`、`defaultOption: null`、`question: null` | `type: "string"` | 抛异常 |
+| `forge_gate_status` | `nodes[].question: null`（auto 档没问题要问） | `type: "string"` | 抛异常 |
+| `forge_gate_check` | `defaultOption: null`、`stopReason: null` | `type: "string"` | 抛异常 |
+| `forge_list_debts` | `entries[].chapter: null`、`bySeverity` | 前者声明 string，后者未声明 | 抛异常 |
+| `forge_debt_gate` | `proceed`/`requiresDecision`/`hasDefault`/`defaultOption`/`decisions`/`stopReason` | 未声明（execute 直接透传闸门对象） | 判违规 |
+| `forge_record_finding` | `debtId: null`、`commit: null` | `type: "string"` | 抛异常 |
+| `forge_outline_draft` | `chars` | 未声明 | 判违规 |
+| `forge_draft_task` | `packageHash` | 未声明 | 判违规 |
+
+「会返回 null 的字段被声明成不可空 string」这个坑**一连出现五次**，
+所以又写了一遍静态扫描（代码里 `x ?? null` / `x: null` 对照 schema 声明），
+把启发式能扫出来的都过了一遍；`forge_record_finding` 就是这么找到的——
+它不在我手工挑的场景里。
+
+### 顺带逮到一个「永远不会失败」的测试
+
+给 `test/output-contract.test.mjs` 补收尾时发现：我早前用行切片重写文件时，
+把最后两行——`console.log(通过/失败)` 和 `if (failures.length > 0) process.exitCode = 1`——
+**切掉了**。于是这个测试即使有 FAIL 也不会让套件变红。
+
+全量断言数对不上就是线索：529 → 578，差的 49 正好是它的条数。
+补回收尾后，又用一个故意失败的副本验证了「失败真的会让退出码变 1」。
+
+**一个不会失败的测试比没有测试更糟**——它会让人以为这块验过了。
+
+### 这一轮的教训
+
+A11/A12/A13 的病根是「测试替身替真实调用方式做了宽容假设」。
+这一轮是同一个病根的第三种形态：**测试只验了「声明合法」，没验「真实返回值合法」**。
+`apply.test.mjs` 一直在加载期校验 schema 能不能过 `defineTool`——
+那是**声明**的合法性，跟**返回值**合不合规是两件事。
+中间那道缝，130 个字段全掉进去了。
+
+以后每加一个工具，`output-contract.test.mjs` 里补一条真实场景；
+`failure-shape.test.mjs` 会自动覆盖它的失败形状。
+
+---
+
 **A13. agent() 空返回对照 —— 已完成（6 例）：抓到第三个洞，而且是静默失血那种**
 
 宿主给模型看的那份权威脚本文档（`dsh-tool-workflow` 的 DESCRIPTION）里明写：
