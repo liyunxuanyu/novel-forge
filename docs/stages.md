@@ -577,6 +577,98 @@ Biz 偏**角色向**（这类人物怎么推动情节）· Scriptor 偏**机制�
 
 分两层，第二层要模型中转站：
 
+**A16. 真机打通 —— 已完成：抓到第七、第八个洞，都只有真机能发现**
+
+作者重启 harness 之后，`forge_status` 第一次真的执行了。这同时证明了两件事：
+A15 的 effect 修复生效（此前 40 个工具刚注册就被注销），
+A16 新加的 `inject` 声明也生效。真机随即报出下面两个问题。
+
+### 洞七：插件没声明 `inject`，cordis 不会等 `tools` 就绪
+
+cordis `lib/index.js:1317-1328` 的 `_refresh()`：
+
+```js
+for (const name of Object.keys(this.inject)) {
+  const impl = this._store[name];
+  if (!impl) { epoch = INACTIVE; break; }
+}
+```
+
+epoch 为 `INACTIVE` 时，`:1336` 的分支不会走 `_reload()`——**`apply` 根本不会被调用**。
+
+三个一方插件全都导出 `inject`：
+
+```js
+// dsh-tool-todo
+const inject = ["tools", "sessionProjections"];
+// dsh-tool-workflow
+const inject = ["tools", "workflowEngine", "systemPrompt"];
+```
+
+本插件没有。不声明的后果：`apply` 立刻执行，此时 `tools` 若还没注册，
+`tryGet(ctx,"tools")` 拿到 null，插件记一条 warn 就 `return`——**而且永远不会重试**。
+这是又一个「插件加载了但一个工具都没有」的独立成因，
+即使 A15 那个 effect bug 修好了，这一条照样能让工具数为 0。
+
+修法：
+
+```js
+export const inject = ["tools"];
+```
+
+**只声明 `tools`。** `Inject.resolve`（`:1491-1499`）把 map 里每个名字都当硬依赖，
+cordis 没有 `{required, optional}` 这种形态。所以 `workspaceRegistry`
+与 `workflowEngine` 只能继续走 `tryGet` 软降级——写进 `inject` 会让缺这些服务的
+profile 连插件都起不来，比降级更糟。
+
+### 洞八：动态映射被声明成 `additionalProperties:false`
+
+`forge_status` 的 `services.detail` 是按服务名铺开的映射，却写成了：
+
+```js
+detail: { type: "object", additionalProperties: false, required: true },
+```
+
+真机直接报（原话）：
+
+```
+"value.services.detail.tools" is not a declared property (additionalProperties: false);
+"value.services.detail.skills" is not a declared property (additionalProperties: false);
+… 共 12 条
+```
+
+改成 `additionalProperties: true` 即可。顺带扫了全部工具模块，
+「`type:"object"` + `additionalProperties:false` 且不声明 `properties`」只此一处。
+
+### 离线测试为什么漏了它
+
+`forge_status` 内联在 `lib/index.js` 里，不在那 7 个工具模块中，
+所以 `output-contract.test.mjs` 的场景清单**一直是 39/40**，漏掉的那个恰好就是它。
+真机上它偏偏是第一个暴露问题的工具。
+
+现在补上：用真实的 `apply()` 把 `forge_status` 取出来，跑一次真返回值过校验。
+反证——把 `detail` 改回 `additionalProperties:false`，
+离线测试立刻报出与真机一字不差的 `is not a declared property`。
+
+### 真机现状（2026-10-09）
+
+- `forge_status`、`forge_book_status` 已在真机上跑通
+- 日志最近一次 boot（`2026-10-09T15:51:34.820Z Host ready: code`）无 import 失败，
+  宿主插件与客户端插件都正常加载（10-08 那两条 `dsh-novel-forge: import failed`
+  是修复前的旧记录，属客户端 web boot，与宿主工具无关）
+- `D:\workspace\Agent WorkSpace\.dsh\profiles\code\package.json` 里
+  `dsh-novel-forge` 是指向源码目录的 **Junction**，所以重启即生效
+- 模型中转站已配好：provider `pix-deepseek` → `deepseek-v4.1-flash`
+
+### 教训
+
+A11–A15 的桩都不忠实，A16 这两条不是桩的问题——**是离线测试覆盖不到的地方**。
+真机是唯一能给出「`additionalProperties:false` 撞上动态映射」这种判据的地方，
+而且它的报错比任何离线推断都精确。
+真机打通之后，每一轮都应该拿真机当 oracle 跑一遍，而不是只在离线套件里自我验证。
+
+---
+
 **A15. ctx.effect 接缝对照 —— 已完成：抓到第六个洞，而且是「插件看着加载了、其实一个工具都没有」的那个**
 
 这个洞解释了本会话一直挂着的一个疑问：**为什么工具表里一个 `forge_*` 都没有，
