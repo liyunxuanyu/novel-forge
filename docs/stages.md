@@ -577,6 +577,37 @@ Biz 偏**角色向**（这类人物怎么推动情节）· Scriptor 偏**机制�
 
 分两层，第二层要模型中转站：
 
+**A13. agent() 空返回对照 —— 已完成（6 例）：抓到第三个洞，而且是静默失血那种**
+
+宿主给模型看的那份权威脚本文档（`dsh-tool-workflow` 的 DESCRIPTION）里明写：
+
+> `agent(prompt, opts?): Promise<any>` — run one subagent to completion.
+> Without `opts.schema` it resolves to the child's final text …
+> **Resolves `null` when the child fails** (filter with `.filter(Boolean)`).
+
+**子代理跑砸，引擎给的是 `null`，不是 reject。**
+
+而我的并行脚本和 fan-out 脚本都在用 `try/catch` 接 `await agent(...)` 的失败——
+**那个 catch 永远接不到**。于是脚本构造出 `{ ok: true, index: i, text: null }`：
+失败的子代理被**标成成功**。
+
+后果分两种：
+
+- 全部失败：`done` 被空输出闸门过滤成空 → 整轮报 `empty-run`。还算好。
+- **部分失败（最坏）**：三个审读维度挂了一个，`done` 里少了那条，
+  `failed` 却是**空的** —— 调用方看到 `degraded: false`，以为一切正常。
+  有一个审读维度根本没跑，**而且书里不留任何痕迹**。
+- fan-out 更糟：工件带着 `text: null` 被当成「已产出」交回。
+
+**修法**：`agent()` 返回值显式判 `null`/`undefined`，记为失败并写明理由；
+`try/catch` 只留给真正的用法错误（传了非法 opts 之类，那才会抛）。
+
+**写这个测试时我自己也踩了一个坑，值得记下来**：假引擎一开始写成
+`async start()`，于是 `runRound` 拿到的是 Promise 而不是 run 句柄，
+`run.result` 变 undefined。**真引擎的 `start()` 是同步的**
+（做完校验就 publish，返回 run，result 是它内部的 promise）。
+把假件写成 async，等于又一次让假件替真实调用方式做假设——
+和 A11/A12 同一个病根，现在我知道怎么避开它了。
 **A12. parent 接缝对照 —— 已完成（5 例）：抓到第二个洞，并牵出 34 条不忠实的旧测试**
 
 接着查 `start()` 里第二行的 `request.parent.session`。那也是硬解引用，
@@ -921,7 +952,7 @@ A-1/A-2/A-3/A-4/A-5 五条通过标准全部达成，其中两条是这条测试
 
 ## 累计
 
-528 项断言（一 33 + 二 44 + 三 58 + 四 28 + 五 68 + 六 44 + 七 60 + 八 51 + 九 45 + 十 95 + 约定 2）。40 个工具。
+534 项断言（一 33 + 二 44 + 三 58 + 四 28 + 五 68 + 六 44 + 七 60 + 八 51 + 九 45 + 十 101 + 约定 2）。40 个工具。
 39 个工具。测试入口 `pwsh -File scripts/test.ps1`。
 
 ---
