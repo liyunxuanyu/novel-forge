@@ -109,14 +109,29 @@ t("工具集合非空（避免本测试空转）", () => {
 // ---- 建工作区 ----
 const initTool = all.get("forge_init_workspace");
 assert.ok(initTool, "缺 forge_init_workspace");
-await initTool.execute({}, EXEC);
+
+// 真机教训：这里原来只 `await initTool.execute(...)` 把返回值丢掉，而下面那个
+// 叫「真实返回值合 schema」的用例其实只断言了 schema 存在——一个永远不会失败的
+// 测试。于是 initWorkspace 在新建路径上多返回的 wroteIgnore / commit 一直没被
+// 发现，直到真机报「wroteIgnore is not a declared property」。
+// 现在真跑真校：沙盒在第 48 行刚被删过，所以这一次走的就是**新建**分支。
+const initFresh = await initTool.execute({}, EXEC);
+const initV = violationsOf(initTool, initFresh);
+assert.deepEqual(initV, [], `forge_init_workspace（新建）返回值违反 schema：${JSON.stringify(initV)}｜实际：${JSON.stringify(initFresh)}`);
+assertLossless("forge_init_workspace.render", initTool.output.render({}, initFresh));
+
+// 再跑一次走幂等分支——两条路径的返回形状不一样，都得校。
+const initAgain = await initTool.execute({}, EXEC);
+const initV2 = violationsOf(initTool, initAgain);
+assert.deepEqual(initV2, [], `forge_init_workspace（幂等）返回值违反 schema：${JSON.stringify(initV2)}｜实际：${JSON.stringify(initAgain)}`);
+assertLossless("forge_init_workspace.render(幂等)", initTool.output.render({}, initAgain));
+
+t("forge_init_workspace 两条分支的真实返回值都合 schema", () => {
+  assert.ok(initFresh.alreadyRepo === false, `首次应当走新建分支，实际 alreadyRepo=${initFresh.alreadyRepo}`);
+  assert.ok(initAgain.alreadyRepo === true, `二次应当走幂等分支，实际 alreadyRepo=${initAgain.alreadyRepo}`);
+});
 
 const BOOK = "测试之书";
-
-t("forge_init_workspace 的真实返回值合 schema", () => {
-  // 已在上方执行，这里只校验形状
-  assert.ok(initTool.output.schema);
-});
 
 /**
  * 关键：对每个「会成功返回」的工具，校验它的 schema 本身
@@ -274,7 +289,7 @@ await (async () => {
   const fakeCtx = {
     logger: { info() {}, warn() {}, error() {} },
     effect(fn) { const undo = fn(); return () => { if (typeof undo === "function") undo(); }; },
-    inject: (_deps, cb) => cb({ plugin: () => {} }),
+    inject: (_deps, cb) => cb({ plugin: () => {}, get: () => undefined }),
     plugin: () => {},
     get(name) {
       if (name === "tools") return { register(t) { captured.push(t); return () => {}; } };
