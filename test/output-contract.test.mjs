@@ -211,11 +211,46 @@ function assertLossless(label, value) {
   walk(value, "$");
 }
 
+/**
+ * 条目级 schema 覆盖追踪。
+ *
+ * 起因：真机报「value.done[0].ok is not a declared property」，而离线测试全绿。
+ * 因为派发类工具当时全走失败路径，done / failed 恒为空数组——
+ * **空数组不校验条目**，条目上的字段漂移全被放过去了。
+ * 所以这里显式记：每个「数组里装对象」的声明，到底有没有被非空数据走到过。
+ * 没走到不算失败（离线造不出全部合法输入），但必须**看得见**，不能静默当已覆盖。
+ */
+function declaredItemFields(def) {
+  const out = [];
+  const props = def?.output?.schema?.properties ?? {};
+  for (const [key, spec] of Object.entries(props)) {
+    if (spec?.type === "array" && spec?.items?.type === "object") out.push(key);
+  }
+  return out;
+}
+
+const itemCoverage = new Map();
+for (const [name, def] of all) {
+  for (const field of declaredItemFields(def)) itemCoverage.set(`${name}.${field}`, false);
+}
+
+function markItemCoverage(name, value) {
+  const def = all.get(name);
+  if (!def) return;
+  for (const field of declaredItemFields(def)) {
+    const arr = value?.[field];
+    if (Array.isArray(arr) && arr.some((x) => x !== null && typeof x === "object")) {
+      itemCoverage.set(`${name}.${field}`, true);
+    }
+  }
+}
+
 async function checkReal(name, args, exec = EXEC) {
   const def = all.get(name);
   assert.ok(def, `没有工具 ${name}`);
   const res = await def.execute(args, exec);
   const v = violationsOf(def, res);
+  markItemCoverage(name, res);
   assert.deepEqual(v, [], `${name} 返回值违反自己的 output.schema：${JSON.stringify(v)}｜实际：${JSON.stringify(res)}`);
   // 成功分支的 render 也要真跑一遍：以前只跑了 render({}, {})，
   // 那基本只走到失败分支——成功分支返回 undefined 也发现不了。
@@ -337,6 +372,19 @@ await (async () => {
   assert.deepEqual(sv, [], `forge_status 返回值违反自己的 output.schema：${JSON.stringify(sv)}｜实际：${JSON.stringify(statusValue)}`);
   assertLossless("forge_status.render", statusDef.output.render({ deep: false }, statusValue));
 })();
+
+// ── 条目级覆盖报告 ──────────────────────────────────────────────────────
+// 不判失败：离线造不出全部合法输入是事实。但未覆盖的必须列出来——
+// 上一轮就是「以为覆盖了、其实恒为空数组」把字段漂移放过去的。
+const uncoveredItems = [...itemCoverage.entries()].filter(([, hit]) => !hit).map(([k]) => k);
+t("条目级 schema 覆盖情况可见（未覆盖的必须列出来，不静默放过）", () => {
+  assert.ok(itemCoverage.size > 0, "一个数组条目声明都没收集到，说明追踪本身失效了");
+  const covered = itemCoverage.size - uncoveredItems.length;
+  console.log(`        条目级声明 ${itemCoverage.size} 处，本轮非空走到 ${covered} 处`);
+  if (uncoveredItems.length > 0) {
+    console.log(`        未走到（离线造不出输入，真机跑到时必须重新核对）：${uncoveredItems.join("、")}`);
+  }
+});
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) process.exitCode = 1;
