@@ -578,6 +578,20 @@ Biz 偏**角色向**（这类人物怎么推动情节）· Scriptor 偏**机制�
 分两层，第二层要模型中转站：
 
 **A10. 面板数据通路 —— 调查结论：被宿主约束挡住（0 例新增）**
+### 复查：现有 host API 也接不上（作者追问后的二次确认）
+
+作者追问「有没有现成的 host API 能用」。逐条查过：
+
+- `ctx.remote` 上共 24 个命名空间（goals / session / settings / credentials / skills /
+  workspaceFiles / pluginManager …），**全部是宿主自有域**，各自绑死自己的 controller，
+  没有一个能捎带书仓状态。
+- 唯一看着像通用通道的 `ctx.remote.$host` 其实只有 `{ home, isLoopback }`——连接信息，不是数据面。
+- `dsh-client-connection` 是纯传输层，没有「任意事件广播给客户端」的通用出口；
+  事件只能经 typert 命名空间下发。
+
+**结论：数据通路没有第三条路。** 要么宿主补上生成器 / 通用取数面，
+要么面板退回「点一下查一次」的按需拉取（牺牲实时性换掉生成器）。
+
 
 阶段九遗留：两个面板永远显示「数据不足」，因为 `client.js` 的 `inject: () => ({})`
 永远返回空 props。切到真机后作者看到的就是这个。
