@@ -288,6 +288,12 @@ async function checkReal(name, args, exec = EXEC) {
   const v = violationsOf(def, res);
   markItemCoverage(name, res);
   assert.deepEqual(v, [], `${name} 返回值违反自己的 output.schema：${JSON.stringify(v)}｜实际：${JSON.stringify(res)}`);
+  // 返回值**本身**也要过无损检查，不能只查 render。
+  // schema 校验看不见 undefined：可选字段写成 undefined 不违反 schema，
+  // 但宿主判的是无损 JSON —— 一次 `note: cond ? undefined : x` 就能让整次
+  // 成功调用变成 invalid output。而 JSON.stringify 会把 undefined 吞掉，
+  // 所以拿 JSON.stringify 做断言消息是**看不见**这个错的，必须显式走一遍。
+  assertLossless(name, res);
   // 成功分支的 render 也要真跑一遍：以前只跑了 render({}, {})，
   // 那基本只走到失败分支——成功分支返回 undefined 也发现不了。
   assertLossless(`${name}.render`, def.output.render(args, res));

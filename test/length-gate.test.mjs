@@ -43,6 +43,21 @@ const map = new Map(
 );
 const call = (n, a) => map.get(n).execute(a ?? {}, { signal: new AbortController().signal });
 
+/**
+ * 宿主判的是「无损 JSON」：undefined / 函数 / NaN 任何一样都会让整次调用
+ * 变成 invalid output。注意**不能**用 JSON.stringify 来查 —— 它会把
+ * undefined 的键直接吞掉，于是断言消息里看着一切正常。
+ */
+function assertLossless(value, label = "返回值") {
+  const walk = (x, p) => {
+    if (x === undefined) throw new Error(`${label} 在 ${p} 有 undefined —— 宿主会判成 invalid output`);
+    if (typeof x === "function") throw new Error(`${label} 在 ${p} 有函数`);
+    if (typeof x === "number" && !Number.isFinite(x)) throw new Error(`${label} 在 ${p} 有非有限数 ${x}`);
+    if (x !== null && typeof x === "object") for (const k of Object.keys(x)) walk(x[k], `${p}.${k}`);
+  };
+  walk(value, "$");
+}
+
 console.log(`阶段十 · 篇幅闸门测试（下限 ${MIN_LENGTH_RATIO}）\n沙盒: ${ws}\n`);
 
 await t("纯函数：没定目标就放行，定了目标才判", async () => {
@@ -88,12 +103,26 @@ await t("导入短稿：放行，但如实标出 short", async () => {
   assert.match(String(r.note ?? ""), /只有 5 字，目标 2000 字/);
 });
 
-await t("导入足量稿：不标 short", async () => {
+await t("导入足量稿：不标 short，且返回值必须是无损 JSON", async () => {
   const body = "雨".repeat(1200);
   const r = await call("forge_import_draft", { title: BOOK, chapter: 1, body });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.short, false, JSON.stringify(r));
-  assert.equal(r.note, undefined);
+  // 这里以前写的是 `assert.equal(r.note, undefined)` —— 它把 bug 当成了规格。
+  // 实现里当时是 `note: len.ok ? undefined : len.detail`，真机上宿主判的是
+  // 无损 JSON，于是**稿子够长的成功路径**整次调用变成 invalid output，
+  // 而稿子太短的那条失败路径反而正常。测试却因为断言的就是 undefined，
+  // 一直绿着。正确的规格是「note 这个键压根不出现」。
+  assert.ok(!("note" in r), `够长的稿子不该带 note 这个键，实际 ${JSON.stringify(r)}`);
+  assertLossless(r, "forge_import_draft 足量稿");
+});
+
+await t("导入短稿：带 note，且同样是无损 JSON", async () => {
+  const r = await call("forge_import_draft", { title: BOOK, chapter: 1, body: "沈昭张口。" });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.short, true, JSON.stringify(r));
+  assert.match(String(r.note), /只有 5 字，目标 2000 字/);
+  assertLossless(r, "forge_import_draft 短稿");
 });
 
 async function toPending() {
