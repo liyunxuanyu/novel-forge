@@ -153,6 +153,34 @@ await t("任务包不泄露宿主路径（只用书仓相对路径）", async ()
   assert.equal(task.includes(projectRoot), false, "任务包里出现了绝对路径");
 });
 
+await t("上一章结尾：通配要真的匹配上文件名", async () => {
+  // 以前是把 "*" 删掉再 includes：定稿/卷01/0001-*.md 变成 "0001-.md"，
+  // 而文件名是 "0001-开口.md"，永远匹配不上——每一章都当成全书第一章在写。
+  await writeInBook("定稿/卷01/0001-开口.md", "他第一次张嘴，说的是一个名字。\n");
+  const pkg = await m.assembleMaterials(ws, BOOK, "ch0002", { volume: 1 });
+  const prev = pkg.segments.find((s) => s.id === "prevChapter");
+  assert.equal(prev.ok, true, "上一章结尾没取到");
+  assert.match(prev.content, /他第一次张嘴/);
+  assert.match(prev.source, /定稿\/卷01\/0001-开口\.md/);
+});
+
+await t("上一章结尾：通配只认前缀后缀，不认中间", async () => {
+  // 前缀 0001- 必须真在开头。放一个中间含 0001- 的文件，不能被选中。
+  await writeInBook("定稿/卷01/0099-提0001-前情.md", "这是干扰项，不该被选中。\n");
+  const pkg = await m.assembleMaterials(ws, BOOK, "ch0002", { volume: 1 });
+  const prev = pkg.segments.find((s) => s.id === "prevChapter");
+  assert.match(prev.content, /他第一次张嘴/);
+  assert.doesNotMatch(prev.content, /干扰项/);
+});
+
+await t("第一章没有上一章：如实报缺，不硬凑一个文件", async () => {
+  const pkg = await m.assembleMaterials(ws, BOOK, "ch0001", { volume: 1 });
+  const prev = pkg.segments.find((s) => s.id === "prevChapter");
+  assert.equal(prev.ok, false);
+  assert.equal(prev.content, "");
+  assert.equal(pkg.missing.includes("prevChapter"), true);
+});
+
 await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
 await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
 

@@ -12,6 +12,7 @@
  */
 import { strict as assert } from "node:assert";
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -172,14 +173,30 @@ await call("forge_draft_task", { title: BOOK, chapter: 1, volume: 1, targetWords
 await call("forge_import_draft", { title: BOOK, chapter: 1, body: "沈昭张口。" });
 await call("forge_dispatch_review", { title: BOOK, chapter: 1 });
 
-await t("端到端：导演停在审读步骤时，缺正文的这一轮根本派不出去", async () => {
+await t("端到端：正文在草稿区时，导演自己取得到，不必调用方手喂", async () => {
   const next = await call("forge_director_next", { title: BOOK });
   assert.equal(next.ok, true, JSON.stringify(next));
   assert.equal(next.node, "chapter.review", `导演应当停在审读，实际 ${next.node}`);
 
+  // 正文就在草稿区躺着（上面 import 过），而且流程状态里记着它在哪。
+  // 要求调用方再复制一遍，等于把「自动导演」降级成「人工搬运」，
+  // 而且搬漏一次子代理就会拿着「（调用方未提供）」去审一篇不存在的稿子。
+  dispatched = 0;
+  const ok = await call("forge_director_run", { title: BOOK, context: { dimensions: ["节奏"] } });
+  assert.equal(ok.ok, true, "正文就在草稿区，导演该自己取到：" + JSON.stringify(ok));
+  assert.equal(dispatched, 1, "取到正文后应当真的派出子代理");
+});
+
+await t("端到端：正文其实读不到时，这一轮根本派不出去", async () => {
+  // 状态还指着那一稿，但文件已经不在了。这时必须拦住：
+  // 拿一份空正文去审，审读子代理会煞有介事地审一篇不存在的稿子。
+  const draftFile = path.join(ws, "草稿", BOOK, "ch0001", "稿件", "v1.md");
+  assert.equal(existsSync(draftFile), true, "前置条件：这一稿本来在");
+  await fs.rm(draftFile);
+
   dispatched = 0;
   const r = await call("forge_director_run", { title: BOOK, context: { dimensions: ["节奏"] } });
-  assert.equal(r.ok, false, "缺正文却派出去了：" + JSON.stringify(r));
+  assert.equal(r.ok, false, "正文读不到却派出去了：" + JSON.stringify(r));
   assert.equal(r.stage, "missing-input", JSON.stringify(r));
   assert.equal(dispatched, 0, `一个子代理都不该启动，实际启动了 ${dispatched} 个`);
 });

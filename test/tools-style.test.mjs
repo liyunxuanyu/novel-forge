@@ -131,6 +131,51 @@ await t("没有构想快照时拒绝扫榜", async () => {
   assert.equal(r.stage, "no-concept");
 });
 
+// ── 去 AI 味：按章号查待审稿 ─────────────────────────────────────────────
+// 这条路以前是断的：状态按 ch0001 这种键存，工具却直接传章号，目录名对不上；
+// 就算对上了，读的也是 state.draftPath 这个不存在的字段。于是「查该章待审稿」
+// 永远返回 no-chapter——而只给 sourceText 的那条路一直是好的，所以从没暴露。
+const AI_FLAVORED = [
+  "他心中充满无尽的悲伤。",
+  "总而言之，他明白了。",
+  "不是不想走，而是不能走。",
+].join("\n");
+
+await t("按章号能查到该章待审稿，且真的查出了东西", async () => {
+  const dir = path.join(ws, "草稿", BOOK, "ch0001", "稿件");
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "v1.md"), AI_FLAVORED, "utf8");
+  await fs.writeFile(
+    path.join(ws, "草稿", BOOK, "ch0001", "状态.json"),
+    JSON.stringify({ schema: 1, chapter: "ch0001", volume: 1, stage: "待审", draft: { version: 1, latest: "稿件/v1.md" } }),
+    "utf8",
+  );
+  const r = await call("forge_ai_flavor_scan", { title: BOOK, chapter: 1 });
+  assert.equal(r.ok, true);
+  assert.match(r.origin, /第 1 章待审稿/);
+  assert.ok(r.total > 0, "这份稿子是故意堆满 AI 味的，一条都没查出来说明根本没读到正文");
+});
+
+await t("状态里还没有稿时如实说没有稿，不假装查过了", async () => {
+  const r = await call("forge_ai_flavor_scan", { title: BOOK, chapter: 7 });
+  assert.equal(r.ok, false);
+  assert.equal(r.stage, "no-chapter");
+});
+
+await t("状态有稿但稿子文件不在，说读不到，不返回空结果冒充「很干净」", async () => {
+  const dir = path.join(ws, "草稿", BOOK, "ch0002");
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, "状态.json"),
+    JSON.stringify({ schema: 1, chapter: "ch0002", volume: 1, stage: "待审", draft: { version: 3, latest: "稿件/v3.md" } }),
+    "utf8",
+  );
+  const r = await call("forge_ai_flavor_scan", { title: BOOK, chapter: 2 });
+  assert.equal(r.ok, false);
+  assert.equal(r.stage, "unreadable");
+  assert.match(r.detail, /v3\.md/);
+});
+
 await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
 await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
 
