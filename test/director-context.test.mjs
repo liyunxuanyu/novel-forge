@@ -129,8 +129,52 @@ await t("起草步骤：taskText 自己组出来，且含本章细纲", async ()
   assert.match(ctx.taskText, /约 1234 字/, "没照状态里的目标字数走");
 });
 
-// ── 审读/改稿取当前稿 ────────────────────────────────────────────────────
+// 下面几条都要「当前那一稿」在盘上，先写出来。
 await writeDraftArea("ch0001/稿件/v1.md", "雨下了三天。\n他站在门口，没进去。\n");
+
+await t("改稿步骤：上一轮的发现项自己从流程状态里取到（自动链就断在这一跳）", async () => {
+  await writeDraftArea("ch0001/状态.json", JSON.stringify({
+    schema: 1, chapter: "ch0001", volume: 1, stage: "待改",
+    draft: { version: 1, latest: "稿件/v1.md" },
+    review: { revisions: 1, findings: 1, items: [{ dimension: "人物", quote: "没进去", note: "太软" }] },
+  }));
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "revise" }), {});
+  assert.deepEqual(
+    ctx.findings,
+    [{ dimension: "人物", quote: "没进去", note: "太软" }],
+    "改稿步骤拿不到上一轮的发现项，这一步就永远 missing-input，自动链退化成人工搬运",
+  );
+  const spec = buildTaskSpec(act({ step: "revise" }), ctx);
+  assert.equal(spec.ok, true, spec.detail);
+  assert.match(spec.prompt, /没进去/);
+});
+
+await t("状态里没有发现项时，改稿步骤如实失败，不拿空数组硬跑", async () => {
+  await writeDraftArea("ch0001/状态.json", JSON.stringify({
+    schema: 1, chapter: "ch0001", volume: 1, stage: "待改", draft: { version: 1, latest: "稿件/v1.md" },
+  }));
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "revise" }), {});
+  assert.equal(ctx.findings, undefined);
+  const spec = buildTaskSpec(act({ step: "revise" }), ctx);
+  assert.equal(spec.ok, false);
+  assert.equal(spec.stage, "missing-input");
+});
+
+await t("起草步骤：把目标字数一并交回调用方，且只算不写（干跑不动状态）", async () => {
+  const statePath = path.join(ws, "草稿", BOOK, "ch0001/状态.json");
+  await writeDraftArea("ch0001/状态.json", JSON.stringify({
+    schema: 1, chapter: "ch0001", volume: 1, stage: "已备料", draft: { version: 0 },
+  }));
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "draft" }), {});
+  assert.equal(
+    ctx.__draftTask?.targetWords, 3000,
+    "没把目标字数交回调用方，导演就落不了库，导入时 checkChapterLength 拿不到 target —— 闸门静默失效",
+  );
+  const after = JSON.parse(await fs.readFile(statePath, "utf8"));
+  assert.equal(after.draftTask, undefined, "autoFillContext 是取材，不该写状态");
+});
+
+// ── 审读/改稿取当前稿 ────────────────────────────────────────────────────
 
 await t("审读步骤：draftText 从流程状态里取当前那一稿", async () => {
   await writeDraftArea("ch0001/状态.json", JSON.stringify({ schema: 1, chapter: "ch0001", volume: 1, stage: "待审", draft: { version: 1, latest: "稿件/v1.md" } }));
