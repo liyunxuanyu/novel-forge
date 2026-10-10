@@ -1502,3 +1502,100 @@ const draft = state.draftPath ?? state.draft ?? null;         // draftPath 这�
 去 AI 味在 `sourceText` 上工作正常，只在按章号取稿时坏。
 两条路的差别恰好是「前缀空不空」和「谁提供正文」——
 所以补的测试都在问同一件事：**这条路真的读到东西了吗**，而不是「返回码是不是 ok」。
+
+---
+
+## 阶段五补之二 · 一条把会话写死的自定义事件，与两个「只在成功分支存在」的字段
+
+### 事故：插件把宿主会话写死了
+
+作者的报错原文：
+
+```
+session "session-028f57a4-69dd-4bad-a19c-a3619b285929" contains event type
+"novelForge/state" (seq 22) unknown to this harness and not marked ignorable;
+refusing to interpret the log
+```
+
+「拒绝解释日志」意味着**这份会话从此打不开**，不是少显示一条消息。追到底，链路是：
+
+| 位置 | 事实 |
+|---|---|
+| `dsh-session/lib/types/index.d.ts:212` | `append<T extends SessionEventType>(type, data, ...opts)`，`T` 是仓内闭合联合；`opts` 只带 `sourceEventSeqs` / `surfaceOp`，**没有任何路径能设 `ignorable`** |
+| `dsh-session/lib/index.js:1050-1052` | 注释原文：仓外插件事件「by construction」不在已知表里，注册口子「is deferred until such a consumer exists」 |
+| `dsh-session-persistence/lib/index.js:184` | `if (!KNOWN.has(event.type) && event.ignorable !== true) throw` —— 抛出去是拒绝**整份日志** |
+| `dsh-session/lib/types/types.d.ts:433-443` | `ignorable` 缺省即「必需」；读到不认识的类型又没这个标记，reader **必须**拒绝 |
+
+结论：**仓外插件只要 `session.append` 一个自定义类型，这份会话就永久读不回来了。**
+
+之前以为有先例（`dsh-tool-todo` 的 `todo/write`），查了才发现 `todo/write`
+**就在仓内已知表里**，压根不走「未知类型」这条判据 —— 拿它当先例是错的。
+这是本次最贵的教训：**「有人这么干过」必须先核实那个人是不是和你同一种身份**
+（仓内 vs 仓外），否则会照着错误的先例把宿主写死。
+
+修法：`lib/publish.js` 的 `publish()` 改成**带文档的 no-op，恒返回 `false`**，
+永不碰 `session.append`。`PUBLISH_EVENT` 常量与投影里的 `apply` 分支保留 ——
+留到宿主真的开出注册口子的那天，而不是一删了事。
+面板因此诚实地显示「数据不足」，而不是假装有数据。
+
+顺带挖出**读日志的工具本身是错的**：`session.v4.jsonl.zstd` 是**多帧拼接**的 zstd 流，
+`zlib.zstdDecompressSync` 只解第一帧（通常就是 210 字节的 session 头），
+于是那个「扫事件类型」的脚本永远只看到 1 条事件、报一切正常。
+重写为按 zstd 帧结构手动走帧（magic / FHD / WindowDesc / DictID / FCS / blocks / Checksum），
+实测本会话：**209 帧、1418 条事件、1263417 字节全部消费完**。
+`scripts/read-session-log.mjs` 现在还能直接报出「未知类型且未标 ignorable」的事件序号。
+
+### 一个「永远不会失败」的测试，比没有测试更糟
+
+新增 `test/publish-safety.test.mjs`（10 条）：先剥注释再静态扫描 `lib/*.js`，
+断言 `.append(` 出现次数为 **0**；spy 断言 `publish()` 不碰 `session.append`；
+投影注册形状（`key === "novelForge"`、`wire.view(init())` 深等于 `{}`）；
+`apply` 仍认得旧事件、其它类型按引用透传。
+
+写完做了一次**变异验证**：临时放一个含 `session.append("novelForge/state", …)` 的探针文件，
+确认恰好红两条，再删探针恢复全绿。不这么走一遍，就无法区分
+「测试通过」和「测试根本没跑」——这一条现在是本项目的固定动作。
+
+### 两个「只在成功分支存在」的字段
+
+真机报 `value.chapter is not a declared property (additionalProperties: false)`。
+根因不是写错了：`buildTaskSpec` 的**成功**分支一直返回 `chapter`（`director.js:455`），
+失败分支（`missing-input` / `no-spec` / `needsModel:false`）不返回。
+而离线场景里这本书一直停在 `design.volume_layout` 这个 **stop 门禁**上，
+`forge_director_plan` 每次都走 `gate-stopped` 失败分支 —— 于是这个字段**从来没被校验过**。
+自动取材（`director-context.js`）把成功路径打通的那一刻，它立刻炸了。
+
+两头都补：
+
+1. schema 里声明 `chapter: { type: "integer" }`；
+2. 测试里把书推到能走成功分支的状态（补 `layout` + `volume-plan` 两个工件的候选与确认），
+   并加一条**断言成功分支真的走到过**的用例 —— 否则下次谁把确认删了，
+   测试会安静地退回「只测失败路径」，而不是变红。
+
+补完立刻又炸出**第二个**同类字段：`forge_director_run` 返回 `stopReason`
+（`dispatch.js:242` 与 `:354`，只有**真的派出子代理**才会走到那两行）。
+同样处理：声明 + 断言「派发成功分支走到过」。
+条目级覆盖从 9 处升到 10 处，未覆盖清单从 14 条降到 13 条。
+
+### 补测试时踩的坑：测试数据本身不合规
+
+布局正文一开始写的是 `## 卷一 · 灯下`，而 `parseVolumeLayout` 的正则是
+
+```
+/^#{1,4}[ \t]*第[ \t]*([0-9]+|[零一二三四五六七八九十]+)[ \t]*卷/
+```
+
+—— **要求有「第」字**。写错了解析不出任何卷，`hasVolumeLayout` 恒为 `false`，
+导演永远停在 `design.volume_layout`，成功分支照样走不到。
+排查办法是写一个一次性探针，把 `forge_director_next` / `forge_director_plan`
+的原样 JSON 打出来，一眼看到 `"node": "design.volume_layout"` 而不是 `"chapter.outline_confirm"`。
+
+**「测试数据不合规」和「被测代码有 bug」的症状一模一样**：都是断言红。
+区别只能靠把中间状态打出来看 —— 光盯着断言消息猜，会往错的方向改。
+
+### 这一节的教训
+
+1. **仓外插件不得向会话日志写自定义事件类型。** 这不是风格问题，是「会把作者的会话写死」。
+2. **先例要先核实身份**：仓内插件能做的事，仓外插件做不了。
+3. **成功分支走不到，等于那条分支没有测试。** 断言「走到了」和断言「返回值对」同等重要。
+4. 诊断工具本身也要验：一个只读第一帧的日志扫描器，比没有扫描器更危险 —— 它给的是假安全感。

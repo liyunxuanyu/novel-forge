@@ -307,6 +307,26 @@ const scenarios = [
   ["forge_write_truth", { title: BOOK, subject: "design(ch0001): 测试写入", files: [{ path: "大纲/卷01/0001-细纲.md", content: "第一章细纲。" }] }],
   ["forge_confirm_artifact", { title: BOOK, artifact: "skeleton" }],
   ["forge_confirm_artifact", { title: BOOK, artifact: "worldbook" }],
+  // 设计工件补齐 layout 与 volume-plan。
+  //
+  // 为什么非补不可：上面第 282 行那次 forge_director_plan 走的是**失败分支**
+  // （nextAction 停在 design.volume_layout 这个 stop 门禁上 → gate-stopped），
+  // 而 buildTaskSpec 的成功分支会多返回一个 chapter（director.js:455）。
+  // 失败分支不带 chapter，于是这个字段在离线永远校验不到；
+  // 自动取材把成功路径打通之后，真机立刻报
+  //   「value.chapter is not a declared property (additionalProperties: false)」。
+  // 又是同一个形状：**测试只走失败路径，成功路径的字段漂移就没人管**。
+  // 布局正文必须写成「第N卷」——director.js 的 parseVolumeLayout 正则要的是
+  // /^#{1,4}[ \t]*第[ \t]*([0-9]+|[零一二三四五六七八九十]+)[ \t]*卷/，
+  // 写成「## 卷一」解析不出任何卷，hasVolumeLayout 恒为 false，
+  // 导演就永远停在 design.volume_layout 上，成功分支照样走不到。
+  ["forge_artifact_candidate", { title: BOOK, artifact: "layout", body: "# 分卷布局\n\n## 第一卷｜灯下\n\n主角发现自己的稿子在成真，卷末被迫写下第一个自己不想写的名字。\n\n## 第二卷｜无归\n\n代价开始反噬，主角与自己写出来的「未来自我」正面撞上。\n" }],
+  ["forge_confirm_artifact", { title: BOOK, artifact: "layout" }],
+  ["forge_artifact_candidate", { title: BOOK, artifact: "volume-plan", body: "# 卷一规划 · 灯下\n\n## 本卷要完成的事\n\n1. 立起「写下的名字会成真」这条规则，并让读者看见它的代价。\n2. 主角第一次为了救人而主动写下一个名字，卷末为此付出代价。\n\n## 章节安排\n\n- 第 1 章：开口。主角在深夜的稿纸上写下一个陌生名字，第二天在讣告上看见它。\n- 第 2 章：他试着改写，发现改得越用力，事情越往反方向走。\n\n## 硬约束\n\n〔硬〕前 20 章不许出现任何形式的系统面板或任务提示。\n〔硬〕「替代」规则一旦成立，不能靠主角后悔撤销。\n" }],
+  ["forge_confirm_artifact", { title: BOOK, artifact: "volume-plan" }],
+  // 这一步必须**成功**：它是 buildTaskSpec 成功分支的唯一离线入口，
+  // chapter / role / prompt 三个字段都在这里被真正校验一次。
+  ["forge_director_plan", { title: BOOK }],
   // 骨架与世界书都落真源之后才查一致性——早了会走 no-skeleton 早退。
   ["forge_consistency_check", { title: BOOK }],
   ["forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "第一章细纲。" }],
@@ -334,9 +354,18 @@ const scenarios = [
   ["forge_director_run", { title: BOOK, step: "design.skeleton" }],
 ];
 
+// 记录施工单的**成功分支**是否真的走到过 —— 见循环后的断言。
+const seenPlanSuccess = [];
+// 同理：forge_director_run 只有**真的把子代理派出去了**才会返回 stopReason
+// （dispatch.js:242/354）。停在 gate-stopped 的失败分支不带这个字段，
+// 所以「stopReason 有没有被校验过」就等于「派发成功分支有没有走到过」。
+const seenRunDispatched = [];
+
 for (const [name, args] of scenarios) {
   try {
     const res = await checkReal(name, args);
+    if (name === "forge_director_plan" && res?.ok === true && res.needsModel === true) seenPlanSuccess.push(res);
+    if (name === "forge_director_run" && res?.ok === true && "stopReason" in res) seenRunDispatched.push(res);
     // 产出正文必须真的交回调用方。
     //
     // 这是真机上发现的断链：forge_fanout_run / forge_director_run 派完子代理、
@@ -368,6 +397,41 @@ for (const [name, args] of scenarios) {
 }
 
 await fs.promises.rm(sandboxRoot, { recursive: true, force: true }).catch(() => {});
+
+// ── 成功分支覆盖断言 ────────────────────────────────────────────────────
+//
+// 只校 schema 是不够的：**走不到的分支，字段漂移没人管**。
+// buildTaskSpec 的成功分支比失败分支多一个 chapter，而离线一直只走失败分支，
+// 于是真机报「value.chapter is not a declared property」时，本地 640 条全绿。
+// 这条断言的作用是：一旦成功分支又走不到了（比如谁把 volume-plan 的确认删了），
+// 它立刻红，而不是安静地退化成「只测失败路径」。
+t("forge_director_plan 的成功分支真的走到过（否则 chapter 这类字段无人校验）", () => {
+  assert.ok(
+    seenPlanSuccess.length > 0,
+    "整轮下来一次都没走到成功分支 —— chapter / role / prompt 这几个只在成功分支出现的字段又没人校验了",
+  );
+  const p = seenPlanSuccess[0];
+  assert.equal(typeof p.chapter, "number", `成功分支必须带 chapter，实际：${JSON.stringify(p)}`);
+  assert.equal(p.node, "chapter.outline_confirm");
+  assert.equal(p.step, "outline");
+  assert.equal(p.needsModel, true);
+  assert.ok(typeof p.role === "string" && p.role.length > 0, "成功分支必须带角色名");
+  assert.ok(typeof p.prompt === "string" && p.prompt.length > 0, "施工单必须真的带任务文本");
+  // 自动取材真的生效了：卷纲是从书仓真源读出来的，不是调用方手喂的。
+  assert.ok(p.prompt.includes("本卷规划"), "prompt 里没有「本卷规划」段，自动取材没生效");
+  assert.ok(p.prompt.includes("不能靠主角后悔撤销"), "prompt 没带上卷纲正文");
+});
+
+t("forge_director_run 的派发成功分支真的走到过（否则 stopReason 无人校验）", () => {
+  assert.ok(
+    seenRunDispatched.length > 0,
+    "整轮下来 forge_director_run 一次都没真的派出子代理 —— stopReason 这个只在派发成功分支出现的字段又没人校验了",
+  );
+  const r = seenRunDispatched[0];
+  assert.ok("stopReason" in r, "派发成功分支必须带 stopReason");
+  assert.ok(Array.isArray(r.done), "派发成功分支必须带 done");
+  assert.ok(r.mode === "single" || r.mode === "parallel", `mode 只能是 single/parallel，实际 ${r.mode}`);
+});
 
 // 收尾这两行不能少：少了它，本测试即使有 FAIL 也不会让套件变红，
 // 等于一个「永远不会失败」的测试——比没有测试更糟。
