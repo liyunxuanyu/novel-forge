@@ -8,7 +8,7 @@
  * 而调用方完全看不出来，整本书就这么带着没写的东西往下走。
  */
 import { strict as assert } from "node:assert";
-import { runRound, runFanout } from "../lib/dispatch.js";
+import { runRound, runFanout, DEFAULT_SUBAGENT_MAX_TOKENS } from "../lib/dispatch.js";
 import { FAKE_PARENT } from "./helpers/fake-parent.mjs";
 
 let passed = 0;
@@ -205,6 +205,55 @@ await t("有 workflowEngine 时仍走引擎，退路不抢", async () => {
   assert.equal(r.ok, true);
   assert.deepEqual(r.done, ["引擎结果"]);
   assert.equal(sa.calls.length, 0, "有引擎就不该去动 subagents");
+});
+
+// ── 输出上限：必须真的传到子代理手上 ────────────────────────────────────
+//
+// 真机实测（2026-10-10）：模型每轮先出 reasoning_content，而 reasoning 与正文
+// **共用同一份 max_tokens 预算**。默认 32768 被推理吃满时正文一个字都出不来，
+// 子代理以 stopReason="max-tokens" 收场——一份写到一半的废稿。
+//
+// 这一组测的正是「修好了没有」：上限没传下去，前面所有失败路径的判断都白搭，
+// 因为子代理根本跑不到失败——它只是安静地交回半截东西。
+await t("maxTokens 要真的落进 agentOptions，不能只停在调用参数里", async () => {
+  const sa = fakeSubagents({});
+  await runRound(undefined, { ...OPTS, subagents: sa, maxTokens: 65536 });
+  const req = sa.calls[0].request;
+  assert.deepEqual(req.agentOptions, { maxTokens: 65536 });
+});
+
+await t("不传 maxTokens 时不能塞 agentOptions 键：undefined 会盖掉宿主的继承", async () => {
+  const sa = fakeSubagents({});
+  await runRound(undefined, { ...OPTS, subagents: sa });
+  const req = sa.calls[0].request;
+  assert.ok(!("agentOptions" in req), `没传上限却多出了 agentOptions：${JSON.stringify(req.agentOptions)}`);
+});
+
+await t("非法上限（0 / 小数 / 字符串）一律不塞，别把坏值发给宿主", async () => {
+  for (const bad of [0, -1, 1.5, "65536", null, NaN]) {
+    const sa = fakeSubagents({});
+    await runRound(undefined, { ...OPTS, subagents: sa, maxTokens: bad });
+    assert.ok(!("agentOptions" in sa.calls[0].request), `maxTokens=${String(bad)} 不该被发出去`);
+  }
+});
+
+await t("并行拆分与 fan-out 两条路也要带上限，不能只有单发带", async () => {
+  const p = fakeSubagents({ output: "意见" });
+  await runRound(undefined, { label: "review", mode: "parallel", prompts: ["a", "b"], parent: FAKE_PARENT, subagents: p, maxTokens: 70000 });
+  assert.equal(p.calls.length, 2);
+  assert.ok(p.calls.every((c) => c.request.agentOptions?.maxTokens === 70000), "并行分支漏了上限");
+
+  const f = fakeSubagents({ output: "工件" });
+  await runFanout(undefined, { jobs: [{ id: "skeleton", prompt: "p1" }], parent: FAKE_PARENT, subagents: f, maxTokens: 70000 });
+  assert.equal(f.calls[0].request.agentOptions?.maxTokens, 70000, "fan-out 漏了上限");
+});
+
+await t("默认上限要高于模型的 32768，否则等于没修", async () => {
+  assert.ok(Number.isInteger(DEFAULT_SUBAGENT_MAX_TOKENS), "默认上限必须是整数");
+  assert.ok(
+    DEFAULT_SUBAGENT_MAX_TOKENS > 32768,
+    `默认上限 ${DEFAULT_SUBAGENT_MAX_TOKENS} 没有超过模型默认的 32768——推理一多正文照样是空串`,
+  );
 });
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);

@@ -1369,3 +1369,66 @@ A-1/A-2/A-3/A-4/A-5 五条通过标准全部达成，其中两条是这条测试
 组件不用重写：`WorkspacePanel` 已经从 `useProjection("novelForge")` 取数，
 换个 slot 挂上去就行。书架要多的是「列出所有书」——
 `forge_book_status` 不带 title 时返回的就是全部书，投影里已经有 `books` 字段。
+---
+
+## 订正 · 「输出最大上限」：上一轮会话为什么死在一处不动
+
+**症状**：上一轮会话最后 5 轮（turn 73–77）`turn/end` 的 reason 全是 `{kind:"max-tokens"}`，
+每轮只产出一个 reasoning 块，**正文零字、工具调用零次**，然后原地重来。整轮会话
+`turn/end` 统计：completed 45、aborted 18、error 9、max-tokens 5。
+
+**根因（实测，不是推测）**：把归档会话解压后逐条量了 1162 个 `assistant/message` 事件：
+
+| turn | 推理字符数 | 其中汉字 | 正文 | 工具调用 |
+|---|---|---|---|---|
+| 75 | 111881 | 55 | 0 | 0 |
+| 77 | 109290 | 81 | 0 | 0 |
+| 76 | 107095 | 36 | 0 | 0 |
+| 74 | 105683 | 92 | 0 | 0 |
+| 73 | 102179 | 11 | 0 | 0 |
+
+这 5 条推理**几乎全是非中文**（汉字 11~92 个），按 汉字/1.6 + 非汉字/3.8 估算约
+**27K~29.5K token**。而模型默认输出上限是 **32768**。
+
+`@earendil-works/pi-ai/dist/api/openai-completions.js:722-725` 自己写着这条规则：
+
+> Reasoning and the answer share max_tokens here, so an uncapped reasoning phase can
+> consume the whole response and leave no answer and no tool call.
+
+**推理和正文共用同一份 `max_tokens`。** 推理吃满 32768，正文就没有位置了。
+所以那 5 轮不是「模型不干活」，是**预算被推理一个人用光了**。
+
+**上限是怎么解析出来的**（读代码链，逐段确认）：
+
+1. `dsh-llm-pi-ai/lib/index.js:677` — `maxTokens = entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens`
+   （`request.defaultMaxTokens` 是**路由级**的，来自插件 Config schema `:1026`）
+2. 解析结果落在 `model.maxTokens`（`:690`）
+3. `@earendil-works/pi-ai/dist/api/simple-options.js:17` —
+   `options?.maxTokens ?? model.maxTokens`，再 `clampMaxTokensToContext`
+4. `openai-completions.js:588-592` — 真正写成 `max_tokens` / `max_completion_tokens`
+
+注意 `modelInfo()`（`:1816-1829`）回给界面描述用的 `defaultMaxTokens` **只认每条模型显式写的
+`maxTokens`**（`:679`），路由级 `defaultMaxTokens` 不进去。也就是说：
+**路由级 `defaultMaxTokens` 管的是「实际请求发多大」，不是「界面显示多大」。**
+
+**修了两处，缺一不可**：
+
+1. **插件侧（写作链）**：`lib/dispatch.js` 新增 `DEFAULT_SUBAGENT_MAX_TOKENS = 65536`，
+   经 `agentOptions.maxTokens` 传给每个子代理。宿主 `SubagentStartRequest` 支持
+   `agentOptions.maxTokens`，子代理默认继承父代理的值——父代理没设就落到模型默认。
+   三个派发口（导演 `runRound`、开书 `runFanout`、拆书）全部带上，`Config.subagentMaxTokens` 可调。
+   只在拿到正整数时才塞 `agentOptions`：`undefined` 会**覆盖**宿主的继承，反而更糟。
+2. **宿主侧（主会话）**：`~/.dsh/profiles/code/cordis.patch.yml` 两个 provider 各加
+   `defaultMaxTokens: 65536`，`deepseek-v4.1-flash` 另加显式 `maxTokens: 65536`
+   （显式写死，免得将来目录里有了这个 id 的元数据把上限盖回默认值）。
+   改前备份为 `cordis.patch.yml.bak-<时间戳>`；改后用 YAML 解析器验过，6 个顶层条目齐全。
+
+**为什么是 65536**：实测该中转站接受 `max_tokens` 直到 262144（65536 / 131072 / 262144 都回 200）。
+观测到的最坏推理量约 29.5K token，65536 留出约 2.2 倍余量，够推理 + 一整章正文；
+再往上只是给「跑飞了」的推理更多烧钱空间，不换来稳定性。**宿主配置改动要重启才生效。**
+
+**还没解决的那一条**：turn 70 的
+`413 moderation_input_limit_exceeded: Request input exceeds the content moderation size limit`。
+用 node fetch 直接打中转站，输入灌到 **100 万 ASCII 字符**都没复现 413，所以真实阈值仍未定位。
+它和上面的 max-tokens 是**两回事**：一个是「输出预算被推理吃光」，一个是「输入太大被审核挡下」。
+目前只知道它发生在 `pix-gpt` / `gpt-5.6-sol` 上，且是本轮会话从「还能干活」滑向「原地打转」的起点。
