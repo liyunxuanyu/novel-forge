@@ -143,6 +143,44 @@ await t("世界书里没有条目标题就拒绝落真源", async () => {
   assert.equal(r.stage, "no-entries");
 });
 
+// 这条是「认不出的标题被静默丢掉」的回归测试。
+// 以前 splitWorldbookEntries 对认不出的标题直接 continue，confirmArtifact 照样
+// 报成功、照样提交 —— 子代理把「地点」写成「场景」，那一份设定就没了，
+// 而作者看到的是「已落真源」。缺一份设定的代价要十几章之后才显形。
+await t("世界书里有认不出的标题：整批不落，不落半份", async () => {
+  const body = [
+    "## 人物｜陆青",
+    "",
+    "这一条类型是对的。",
+    "",
+    "## 场景｜断桥",
+    "",
+    "「场景」不在类型表里。",
+    "",
+  ].join("\n");
+  const r = await fo.confirmArtifact(ws, BOOK, "worldbook", body);
+  assert.equal(r.ok, false, "有认不出的标题就必须整批拦下");
+  assert.equal(r.stage, "bad-entry-heading");
+  assert.deepEqual(r.skipped, ["场景｜断桥"], "要指名道姓，否则子代理只会原样再交一遍");
+  // 关键：同一批里**认得出**的那条也不能落。落了就是「落半份」。
+  assert.equal(
+    existsSync(path.join(bookBase, "设定", "人物", "陆青.md")), false,
+    "认得出的一条被落了 —— 这就是落半份，作者会以为世界书齐了",
+  );
+  // 也不能产生提交。
+  const log = await wh.git(["log", "-1", "--format=%s"], ws);
+  assert.equal(log.stdout.trim(), "design: 确认世界书", "被拦下的批次不该留下提交");
+});
+
+await t("世界书条目报告把认不出的标题交回来，而不是丢掉", () => {
+  const md = "## 人物｜甲\n\n甲。\n\n## 势力｜乙\n\n乙。\n\n## 时空｜丙\n\n丙。\n";
+  const { entries, skipped } = fo.worldbookEntryReport(md);
+  assert.deepEqual(entries.map((e) => `${e.type}｜${e.name}`), ["人物｜甲", "势力｜乙"]);
+  assert.deepEqual(skipped, ["时空｜丙"]);
+  // 薄封装行为不变：只要条目。
+  assert.deepEqual(fo.splitWorldbookEntries(md).map((e) => e.name), ["甲", "乙"]);
+});
+
 // ── 标准 3：一致性检查 ───────────────────────────────────────────────────
 await t("骨架索引里的实体在世界书里都有 → 一致", async () => {
   const r = await fo.consistencyCheck(ws, BOOK);
