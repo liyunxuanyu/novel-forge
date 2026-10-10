@@ -1599,3 +1599,105 @@ refusing to interpret the log
 2. **先例要先核实身份**：仓内插件能做的事，仓外插件做不了。
 3. **成功分支走不到，等于那条分支没有测试。** 断言「走到了」和断言「返回值对」同等重要。
 4. 诊断工具本身也要验：一个只读第一帧的日志扫描器，比没有扫描器更危险 —— 它给的是假安全感。
+
+---
+
+## 阶段五补之三 · 四个「从来没成功过」的工具，与一条不许再发生的硬规矩
+
+上一节修的是「拆书管道的调用顺序反了」。顺序修对之后，管道第一次真的跑通，
+立刻又暴露出四个 bug —— 全是同一形状：**工具返回的字段比它自己声明的 schema 多。**
+宿主按 `additionalProperties: false` 校验，会把**整次工具调用**拒掉。
+
+### 四个 bug
+
+| # | 工具 | 返回 | 声明 | 后果 |
+|---|------|------|------|------|
+| A | `forge_ref_plan` | `{index, chapter, from, to, size}` | `{index, from, to}` | 定完范围就失败，拆书开不了头 |
+| B | `forge_ref_status` | 完整记录（含 `source` 元数据与 `ranges`） | `{sourceId, version, doneBatches}` | 列参考书失败 |
+| C | `forge_confirm_outline` | `{…, marks: ["硬","软","自由"]}` | 无 `marks` | **唯一一次能解锁整条章节流水线的调用**被拒 |
+| D | `forge_settle_chapter` | 整个 `bookStatus` 对象 | 只有 3 个字段 | 定稿失败 |
+
+A、B 的修法是在**工具层做一次投影**，把模块层的内部记录换成对外形状
+（A 顺手留下 `size`，丢掉恒为 `null` 的内部字段 `chapter`；B 留下 `title`，
+因为那是作者挑参考书时唯一认得出的东西）。
+这与代码里既有的 `start/end → from/to` 映射是同一条思路：**模块记录 ≠ 对外契约。**
+
+C 的修法是补声明。`marks` 是这条工具存在的意义之一 —— render 就是靠它告诉作者
+「约束标了没」，不声明等于把这条工具的产出整个丢掉。
+
+D 是同一个形状**第三次**出现（前两次：`forge_status.services.detail`、
+`forge_book_status.status`）。这次不再各处补声明，而是把形状搬到**产出它的地方**：
+`warehouse.js` 导出 `BOOK_STATUS_PROPS` / `BOOK_STATUS_SCHEMA`，两个消费方共用。
+顺手发现 `forge_book_status` 那份手抄的声明比产出**窄**：
+`kind` 声明成 `string`，而产出侧对主题解析不出来的提交给的是 `null`；
+`bookId` / `schema` / `currentVolume` / `createdAt` / `lastCommit` 同理。
+—— 抄第二遍就会抄漏，这是必然，不是意外。
+
+### 真正的大洞：整条章节流水线离线从没跑通过
+
+`forge_confirm_outline` 要求细纲正文自带至少一条〔硬〕〔软〕〔自由〕行首标记。
+测试里的细纲正文只有「第一章细纲。」五个字 —— 没有标记。
+
+于是它返回 `outline-unmarked`，章节永远停在「细纲待确认」，接下来
+`forge_assemble_materials`（outline-not-confirmed）、`forge_import_draft`（transition）、
+`forge_dispatch_review`（no-draft）、`forge_record_findings`（transition）、
+`forge_settle_chapter`（transition）**全部**走失败分支。
+
+**这是这个产品最核心的一段链路（备料 → 导入 → 派审 → 回写 → 定稿），
+而它离线一次都没跑通过，测试却全绿。**
+
+之所以全绿：每个工具的失败返回值都是**合法形状**，schema 校验照过。
+一个工具「一次都没成功过」这件事，没有任何断言在看。
+
+### 让「一次都没成功过」看得见
+
+两个动作：
+
+1. **结构化失败清单。** 循环里把每次 `{ok:false, stage, detail}` 记下来，收尾统一打印。
+   它不判失败（失败形状合法），但同一工具每次都失败，一眼就能看见。
+   本轮三个「从来没成功过」的工具全是靠它现形的。
+2. **条目级 schema 覆盖表**（上一轮已有）从 10/23 提到 **23/23**。
+
+外加一条硬规矩测试：
+
+```
+被调用过的工具都至少成功过一次（不许整个工具只走失败分支）
+```
+
+只要一个工具被场景调用过，它就必须至少成功一次；做不到就说明
+要么测试数据不合规、要么代码真有 bug —— 不去分辨，两种都必须当场看见。
+这条断言做过变异测试：把 `kind` 从 `"句式"` 改回 `"措辞"`，
+它立刻报 `forge_style_add（2 次调用，0 次成功）`。
+
+### 六处「测试数据不合规」（不是代码 bug）
+
+| 位置 | 写成了 | 应该 |
+|------|--------|------|
+| `forge_ref_import` | `basisKind: "self-owned"` | `"用户声明"` |
+| `forge_style_add` | `kind: "措辞"` | `STYLE_KINDS` 里的值 |
+| `forge_style_add` 摘录 | 自己编的「风很轻。」 | 定稿正文里逐字有的行 |
+| `forge_ai_flavor_scan` | 「他忽然意识到。风很轻，很轻。」 | 得真命中五类判据之一 |
+| `forge_confirm_outline` 细纲 | 无约束标记 | 至少一条〔硬〕〔软〕〔自由〕 |
+| `forge_chapter_status`（不带章号） | 在还没有章节时调用 | 章节存在之后也调一次 |
+
+`forge_ai_flavor_scan` 那条尤其典型：`FILLER_ADJECTIVES` 里没有「仿佛」，
+`SUMMARY_MARKERS` 里没有「忽然意识到」，`EMOTION_PATTERNS` 也都不匹配 ——
+那段文本一个判据都不命中，`total` 恒为 0，`groups` 恒为空。
+换成照着判据挑的文本（「这意味着…」「感到十分愤怒」「淡淡的、无声的」「不是…而是…」）
+之后四类命中。
+
+另外，定稿那一格离线用的是 `allowShort: true`。这不是绕过检查：
+正文只有 5 个字，而 `allowShort` 是**作者本来就有**的放行口（短章、番外）。
+不放行的话章节停在待定稿，后面 `forge_style_add` 的 `no-finalized`
+与 `forge_style_list` 的空 `entries` 会一路塌下去 —— 那正是上一轮的样子。
+
+### 这一节的教训
+
+1. **失败形状合法，所以「这个工具从没成功过」可以一路全绿。** 必须有一条断言专门盯它。
+2. **`additionalProperties: false` 让「多返回一个字段」等于「整次调用失败」。**
+   声明和产出必须同源，抄第二遍必然抄漏。
+3. **模块层的内部记录不要直接抛给宿主。** 在工具层做一次显式投影。
+4. **最核心的链路可能一次都没跑通过，而测试全绿。**
+   「覆盖了多少条断言」不等于「覆盖了哪条路」。
+5. 诊断输出（结构化失败清单、条目级覆盖表）比断言消息更能指出方向 ——
+   断言只说「红」，清单说「哪里红、为什么」。

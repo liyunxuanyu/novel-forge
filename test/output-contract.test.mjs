@@ -99,7 +99,42 @@ const resolveRoot = () => sandboxRoot;
 // 之前一律回 [文本]，于是 fanout 的条目形状从来没被校验到。
 const fakeEngine = {
   start(spec) {
-    const isFanout = Array.isArray(spec?.args?.jobs);
+    const jobs = spec?.args?.jobs;
+    const isFanout = Array.isArray(jobs);
+
+    // 拆书那一批是**单 job** 的 fanout，要的形状和设计工件 fanout 完全不同：
+    // 它要模型按提示词回一段 JSON 数组。替身必须照着提示词的格式回，
+    // 否则 recordBatch 里「回原文核证」那两行（accepted / rejected）永远走不到。
+    // 之前一律回 "生成的内容"，于是 forge_ref_batch 每次都在 no-array 处失败，
+    // 覆盖表上 rejected 恒为空 —— 而那两行恰恰是这个工具的核心。
+    const batchJob = isFanout && jobs.length === 1 && jobs[0]?.id === "batch" ? jobs[0] : null;
+    if (batchJob) {
+      const numbered = String(batchJob.prompt).split("## 带行号的原文\n")[1] ?? "";
+      const first = numbered.split("\n").find((l) => l.includes("\t")) ?? "";
+      const tab = first.indexOf("\t");
+      const lineNo = Number(first.slice(0, tab));
+      const text = first.slice(tab + 1);
+      // 第 2 批故意交一条摘录对不上的：rejected 这条分支必须被走到。
+      const bad = lineNo === 2;
+      const mech = {
+        kind: "机制向",
+        name: bad ? "摘录对不上的那条" : "带行号的摘录",
+        statement: "机制说明。",
+        appliesWhen: "适用条件。",
+        notAppliesWhen: "不适用条件。",
+        evidence: { lineStart: lineNo, lineEnd: lineNo, quote: bad ? "这句话原文里没有。" : text },
+      };
+      return {
+        id: "r",
+        result: Promise.resolve({
+          stopReason: "completed",
+          value: { done: [{ id: "batch", ok: true, text: JSON.stringify([mech]) }], failed: [] },
+          agentsStarted: 1,
+        }),
+        dispose() {},
+      };
+    }
+
     // 故意留一份失败：done 与 failed 的**条目级** schema 都要被走到。
     // 只回成功的话，failed[].ok 这类字段永远校验不到——真机上一轮就是这么漏的。
     const value = isFanout
@@ -283,8 +318,14 @@ const scenarios = [
   ["forge_fanout_plan", { title: BOOK }],
   ["forge_gate_status", { title: BOOK }],
   ["forge_gate_check", { title: BOOK, node: "chapter.draft" }],
+  // chapter.draft 是 auto 级，decisions 恒为空 —— 条目级 schema 一次都校验不到。
+  // 换一个 stop 级节点，把 decisions 的条目真正走一遍。
+  ["forge_gate_check", { title: BOOK, node: "chapter.settle" }],
+  ["forge_gate_check", { title: BOOK, node: "不存在的节点" }],
   ["forge_list_debts", { title: BOOK }],
   ["forge_chapter_status", { title: BOOK, chapter: 1 }],
+  // 不带章号走的是 chapters 那条路；带章号走单章形状。两条路都要走。
+  ["forge_chapter_status", { title: BOOK }],
   // 骨架必须带「## 索引」，否则 forge_consistency_check 会在 no-index 处早退，
   // missing / typeMismatch / extra 三个条目级 schema 永远走不到（覆盖表早就点名了这三处）。
   // 这里刻意造出三种不匹配：
@@ -306,6 +347,11 @@ const scenarios = [
   ["forge_debt_gate", { title: BOOK }],
   ["forge_write_truth", { title: BOOK, subject: "design(ch0001): 测试写入", files: [{ path: "大纲/卷01/0001-细纲.md", content: "第一章细纲。" }] }],
   ["forge_confirm_artifact", { title: BOOK, artifact: "skeleton" }],
+  // 骨架已落、layout 与 worldbook 还没落 —— 此刻 ready 恰好是这两件，
+  // 于是假引擎回「一件成功、一件失败」，done[] 与 failed[] 的**条目级**
+  // schema 才真正被校验到。放到场景最末尾去调，那时工件全落完了，
+  // 只会走 nothing-ready，两处条目声明恒为空。
+  ["forge_fanout_run", { title: BOOK }],
   ["forge_confirm_artifact", { title: BOOK, artifact: "worldbook" }],
   // 设计工件补齐 layout 与 volume-plan。
   //
@@ -329,28 +375,80 @@ const scenarios = [
   ["forge_director_plan", { title: BOOK }],
   // 骨架与世界书都落真源之后才查一致性——早了会走 no-skeleton 早退。
   ["forge_consistency_check", { title: BOOK }],
-  ["forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "第一章细纲。" }],
+  // 细纲正文必须自带至少一条〔硬〕〔软〕〔自由〕行首标记，否则 forge_confirm_outline
+  // 直接返回 outline-unmarked —— 而这一条卡住之后，整条章节流水线
+  //（备料 → 导入 → 派审 → 回写 → 定稿）**全部**走失败分支。
+  // 之前 body 只写「第一章细纲。」，于是这个产品最核心的一段链路
+  // 离线一次都没跑通过，覆盖表上 5 处条目声明恒为空。
+  // 这个洞是靠上面那份「结构化失败清单」才看见的——只校 schema 永远看不见。
+  ["forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "第一章细纲。\n\n〔硬〕主角必须在卷末写下第一个自己不想写的名字。\n〔软〕尽量少用对白，用动作交代关系。\n〔自由〕配角的姓名与外貌可自由发挥。\n" }],
   ["forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 }],
   ["forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 }],
+  // 这里才是自动导演**真正该派子代理**的那一刻：细纲已确认、材料已备齐，
+  // 下一步 chapter.draft 是 auto 级且需要模型 —— nextAction 会 proceed，
+  // 派发成功分支（带 stopReason、带 done/failed）只有走到这里才校验得到。
+  //
+  // 以前这一格是「假装」走到的：上面 confirm_outline 失败，章节卡在细纲待确认，
+  // 于是 nextAction 落在同样 auto 的 outline 步上，碰巧派了一次。
+  // 把细纲修对之后，那个「碰巧」就消失了 —— 说明它从来不是被设计出来的覆盖。
+  ["forge_director_run", { title: BOOK }],
   ["forge_draft_task", { title: BOOK, chapter: 1, volume: 1 }],
   ["forge_import_draft", { title: BOOK, chapter: 1, volume: 1, body: "正文草稿。" }],
   ["forge_dispatch_review", { title: BOOK, chapter: 1 }],
   ["forge_record_findings", { title: BOOK, chapter: 1, covered: ["文风"], findings: [], summary: "零发现项。" }],
-  ["forge_settle_chapter", { title: BOOK, chapter: 1, volume: 1 }],
+  // 离线不真写字，正文只有 5 个字，所以这里显式走 allowShort 这条**作者本来就有**的
+  // 放行口（短章、番外）。不放行的话定稿被拦，章节停在待定稿，
+  // 后面 forge_style_add 的 no-finalized 与 forge_style_list 的空 entries 会一路塌下去 ——
+  // 那正是上一轮的样子：整条「定稿之后」的链路离线从没通过。
+  ["forge_settle_chapter", { title: BOOK, chapter: 1, volume: 1, allowShort: true }],
   ["forge_settle_volume", { title: BOOK, volume: 1 }],
   ["forge_settle_debt", { title: BOOK, id: "d0001", action: "resolve", how: "已按审读意见改掉。" }],
   ["forge_scan_mechanisms", { title: BOOK, text: "他握紧拳头。他知道，这一战避不开了。" }],
-  ["forge_ai_flavor_scan", { title: BOOK, sourceText: "他忽然意识到。风很轻，很轻。仿佛一切都在这一刻凝固了。" }],
+  // 这段文本是照着 ai-flavor.js 的五类判据挑的，四类都命中
+  //（总结句标志「这意味着」／情绪直述「感到十分愤怒」／万能形容词「淡淡的」「无声的」／
+  //  对称句式「不是…而是…」）。原来那句「他忽然意识到。风很轻，很轻。」一个判据都不命中，
+  // 于是 total 恒为 0、groups 恒为空 —— 条目级 schema 一次都没校验到。
+  ["forge_ai_flavor_scan", { title: BOOK, sourceText: "这意味着他已经没有退路了。他感到十分愤怒。窗外是淡淡的、无声的光。这不是勇气，而是侥幸。" }],
   ["forge_style_list", { title: BOOK }],
-  ["forge_style_add", { title: BOOK, entries: [{ kind: "措辞", statement: "少用「仿佛」「忽然」这类词。", why: "这本书要写得干脆。", evidence: { chapter: 1, lineStart: 1, quote: "风很轻。" } }] }],
-  ["forge_ref_status", {}],
-  ["forge_ref_consent", { sourceId: "test_src", provider: "openai", model: "gpt-4o", service: "openai", ranges: [{ start: 1, end: 120 }] }],
-  ["forge_ref_import", { sourceId: "test_src", filename: "a.txt", content: "第一行原文。", title: "测试原作", author: "某人", edition: "初版", acquiredFrom: "自购", allowedUses: "仅拆解", basis: "自购纸书", basisKind: "self-owned" }],
-  ["forge_ref_mechanisms", { sourceId: "test_src" }],
-  ["forge_ref_batch", { sourceId: "test_src", index: 1 }],
+  // 这条场景原来有两处都不合规，所以 forge_style_add **从来没成功过**：
+  //   1. kind 写的是「措辞」，而 STYLE_KINDS 只有 视角/句式/对话/留白/节奏/意象；
+  //   2. 出处摘录写的是「风很轻。」—— 那是我自己编的句子，
+  //      而上面 import_draft 落的定稿正文是「正文草稿。」。
+  // 两处都只会让工具返回结构化失败，测试照样全绿，
+  // 于是 entries 与 rejected 两处条目声明恒为空。
+  // 「测试数据不合规」和「代码有 bug」的症状一模一样，只有把中间状态打出来才分得清。
+  ["forge_style_add", { title: BOOK, entries: [{ kind: "句式", statement: "少用「仿佛」「忽然」这类词。", why: "这本书要写得干脆。", evidence: { chapter: 1, lineStart: 1, quote: "正文草稿。" } }] }],
+  ["forge_style_add", { title: BOOK, entries: [{ kind: "句式", statement: "这条的出处对不上。", why: "为了走 rejected 分支。", evidence: { chapter: 1, lineStart: 1, quote: "这句话定稿里没有。" } }] }],
+  ["forge_style_list", { title: BOOK }],
+  // ── 拆书管道：必须按真实顺序走（先导入 → 再定范围 → 再许可 → 再拆）──
+  //
+  // 这一段原来是**倒着**写的：plan / consent / mechanisms / batch 全排在 import
+  // 之前，于是每一个都走「源不存在」的失败分支，整条管道离线从来没跑通过。
+  // 更糟的是 import 自己的 basisKind 传了 "self-owned"，而 BASIS_KINDS 只有
+  // 「用户声明 / 可核对许可」—— 它每次都返回 bad-basis-kind，
+  // 但因为没人断言它 ok，测试照样全绿，覆盖表上 6 处条目级 schema 恒为空。
+  // 又一次印证同一条：**只校 schema 不够，还得断言「这一步真的成了」**。
+  ["forge_ref_import", { sourceId: "test_src", filename: "a.txt", content: "第一行原文。\n第二行原文。\n第三行原文。", title: "测试原作", author: "某人", edition: "初版", acquiredFrom: "自购纸书", allowedUses: "仅拆解", basis: "作者本人声明允许拆解，不对外分发。", basisKind: "用户声明" }],
+  ["forge_ref_plan", { sourceId: "test_src", ranges: [{ start: 1, end: 3 }], batchLines: 1 }],
+  ["forge_ref_consent", { sourceId: "test_src", provider: "openai", model: "gpt-4o", service: "openai", note: "作者本人允许。" }],
+  ["forge_ref_status", { sourceId: "test_src" }],
+  ["forge_ref_batch", { sourceId: "test_src" }],       // 第 1 批：摘录对得上 → 落盘
+  ["forge_ref_mechanisms", { sourceId: "test_src" }],  // 有机制了 → mechanisms 条目被校验
+  ["forge_ref_mechanisms", { sourceId: "test_src", kind: "机制向" }],
+  ["forge_ref_batch", { sourceId: "test_src" }],       // 第 2 批：摘录对不上 → rejected
+  ["forge_ref_status", {}],                            // 不带 sourceId → sources
+  // 扫榜要在机制落盘**之后**才扫得出东西。上面那次调用是在拆书之前，
+  // 参考库里一条机制都没有，rows 恒为空 —— 失败路径值得留，但条目级 schema
+  // 只有这一次才校验得到。
+  ["forge_scan_mechanisms", { title: BOOK, text: "他握紧拳头。他知道，这一战避不开了。" }],
+  ["forge_scan_mechanisms", { title: BOOK, text: "他握紧拳头。他知道，这一战避不开了。", sourceId: "test_src" }],
   ["forge_ref_redeconstruct", { sourceId: "test_src", reason: "换了拆解口径。" }],
   ["forge_fanout_run", { title: BOOK }],
   ["forge_director_next", { title: BOOK }],
+  // 不带章号的 chapters 那条路要在**真的有章节之后**再走一次：
+  // 开头那次调用发生在建书之后、细纲之前，chapters 恒为空数组，
+  // 条目级 schema 一次都校验不到。空数组不校验条目 —— 这正是本文开头记的那个坑。
+  ["forge_chapter_status", { title: BOOK }],
   ["forge_director_run", { title: BOOK, step: "design.skeleton" }],
 ];
 
@@ -360,12 +458,42 @@ const seenPlanSuccess = [];
 // （dispatch.js:242/354）。停在 gate-stopped 的失败分支不带这个字段，
 // 所以「stopReason 有没有被校验过」就等于「派发成功分支有没有走到过」。
 const seenRunDispatched = [];
+// 拆书管道同理：只校 schema 的话，import 返回 bad-basis-kind 也照样绿
+// （它就是这么绿了很久的）。每一步「真的成了」都单独记一笔。
+const refSteps = { imported: false, planned: 0, consented: false, accepted: 0, rejected: 0, mechanisms: 0, sources: 0 };
+
+// 结构化失败（{ok:false, stage, detail}）本身是合法返回值，不算失败 ——
+// 但**没人看得见它们**，于是「某个工具其实一次都没成功过」可以一路绿下去。
+// 本轮就是靠这份清单才发现 forge_style_add / forge_ref_import / forge_assemble_materials
+// 三个场景的测试数据都不合规（kind 不在枚举里、basisKind 拼错、摘录对不上原文），
+// 工具每次都走失败分支，而断言只看 schema 形状，全绿。
+const refusals = [];
+// forge_director_run 的结果单独记一份：它到底停在哪一步、有没有真的派出去，
+// 光看「ok 不 ok」看不出来 —— 上一次就是靠这份清单才发现
+// 「派发成功分支一次都没走到」而断言却在别处绿着。
+const runCalls = [];
+// 每个工具到底成功过没有。见循环后那条硬规矩。
+const scenarioResults = [];
 
 for (const [name, args] of scenarios) {
   try {
     const res = await checkReal(name, args);
+    scenarioResults.push({ name, ok: res?.ok === true });
+    if (res?.ok === false) refusals.push({ name, stage: res.stage, detail: String(res.detail ?? "").slice(0, 90) });
+    if (name === "forge_director_run") {
+      runCalls.push({ ok: res?.ok, stage: res?.stage, step: res?.step, mode: res?.mode, needsModel: res?.needsModel, hasStopReason: Boolean(res && "stopReason" in res), detail: String(res?.detail ?? "").slice(0, 50) });
+    }
     if (name === "forge_director_plan" && res?.ok === true && res.needsModel === true) seenPlanSuccess.push(res);
     if (name === "forge_director_run" && res?.ok === true && "stopReason" in res) seenRunDispatched.push(res);
+    if (name === "forge_ref_import" && res?.ok === true) refSteps.imported = true;
+    if (name === "forge_ref_plan" && res?.ok === true) refSteps.planned = res.batches?.length ?? 0;
+    if (name === "forge_ref_consent" && res?.ok === true) refSteps.consented = true;
+    if (name === "forge_ref_batch") {
+      refSteps.accepted += res?.ids?.length ?? 0;
+      refSteps.rejected += res?.rejected?.length ?? 0;
+    }
+    if (name === "forge_ref_mechanisms" && res?.ok === true) refSteps.mechanisms += res?.mechanisms?.length ?? 0;
+    if (name === "forge_ref_status" && Array.isArray(res?.sources)) refSteps.sources += res.sources.length;
     // 产出正文必须真的交回调用方。
     //
     // 这是真机上发现的断链：forge_fanout_run / forge_director_run 派完子代理、
@@ -391,10 +519,41 @@ for (const [name, args] of scenarios) {
     console.log(`  PASS  ${name} 返回值过宿主校验`);
   } catch (error) {
     failures.push({ name, error });
+    scenarioResults.push({ name, ok: false });
     console.log(`  FAIL  ${name} 返回值过宿主校验`);
     console.log(`        ${error?.message ?? error}`);
   }
 }
+
+// ── 硬规矩：被调用过的工具，必须至少成功过一次 ──────────────────────────
+//
+// 这条是本轮四个 bug 里三个的共同形状换来的教训。那三个都是：
+// **某个工具在离线测试里一次都没成功过**，每次都走失败分支，
+// 而所有断言只看 schema 形状 —— 失败形状也是合法形状，于是全绿。
+//   · forge_ref_import    —— basisKind 写成 "self-owned"，不在枚举里
+//   · forge_style_add     —— kind 写成「措辞」，不在枚举里；摘录还编了一句原文里没有的
+//   · forge_confirm_outline —— 细纲没带〔硬〕〔软〕〔自由〕标记，
+//                             连带整条章节流水线（备料→导入→派审→回写→定稿）全断
+// 这三个里面，只有第三个是**代码**问题，前两个是**测试数据**问题；
+// 但症状一模一样，而且都表现为「覆盖表上几处条目级 schema 恒为空」。
+// 所以这里不去分辨谁对谁错，只立一条规矩：
+// **只要一个工具被场景调用过，它就必须至少成功一次。**
+// 做不到，就说明要么测试数据不合规、要么代码真有 bug —— 两种都必须当场看见。
+t("被调用过的工具都至少成功过一次（不许整个工具只走失败分支）", () => {
+  const byTool = new Map();
+  for (const { name, ok } of scenarioResults) {
+    const rec = byTool.get(name) ?? { calls: 0, ok: 0 };
+    rec.calls += 1;
+    if (ok) rec.ok += 1;
+    byTool.set(name, rec);
+  }
+  assert.ok(byTool.size > 20, `只收集到 ${byTool.size} 个工具的调用记录，追踪本身失效了`);
+  const neverSucceeded = [...byTool.entries()].filter(([, r]) => r.ok === 0).map(([n, r]) => `${n}（${r.calls} 次调用，0 次成功）`);
+  assert.deepEqual(
+    neverSucceeded, [],
+    `以下工具在整个离线场景里一次都没成功过——失败形状也是合法形状，所以光校 schema 看不出来：\n  ${neverSucceeded.join("\n  ")}`,
+  );
+});
 
 await fs.promises.rm(sandboxRoot, { recursive: true, force: true }).catch(() => {});
 
@@ -431,6 +590,16 @@ t("forge_director_run 的派发成功分支真的走到过（否则 stopReason �
   assert.ok("stopReason" in r, "派发成功分支必须带 stopReason");
   assert.ok(Array.isArray(r.done), "派发成功分支必须带 done");
   assert.ok(r.mode === "single" || r.mode === "parallel", `mode 只能是 single/parallel，实际 ${r.mode}`);
+});
+
+t("拆书管道整条真的跑通过（否则 6 处条目级 schema 恒为空）", () => {
+  assert.ok(refSteps.imported, "forge_ref_import 没成功过 —— 检查 basisKind 是不是 BASIS_KINDS 里的值");
+  assert.ok(refSteps.planned > 0, "forge_ref_plan 没切出任何批次");
+  assert.ok(refSteps.consented, "forge_ref_consent 没成功过");
+  assert.ok(refSteps.accepted > 0, "没有任何一条机制通过回原文核证 —— accepted 那条分支没走到");
+  assert.ok(refSteps.rejected > 0, "没有任何一条被拒 —— rejected 条目级 schema 没走到");
+  assert.ok(refSteps.mechanisms > 0, "落盘之后 forge_ref_mechanisms 一条都读不出来");
+  assert.ok(refSteps.sources > 0, "forge_ref_status 不带 sourceId 时没列出任何参考库");
 });
 
 // 收尾这两行不能少：少了它，本测试即使有 FAIL 也不会让套件变红，
@@ -471,6 +640,16 @@ await (async () => {
 // ── 条目级覆盖报告 ──────────────────────────────────────────────────────
 // 不判失败：离线造不出全部合法输入是事实。但未覆盖的必须列出来——
 // 上一轮就是「以为覆盖了、其实恒为空数组」把字段漂移放过去的。
+// ── 结构化失败清单（不判失败，只求看得见）────────────────────────────────
+// 每个 forge_* 都能返回 {ok:false, stage, detail}，那是合法形状，不该让套件变红。
+// 但一份都不打印的话，「这个工具一次都没成功过」就永远没人知道。
+if (refusals.length > 0) {
+  console.log(`        ${refusals.length} 次结构化失败（合法形状；但同一工具若每次都失败，说明测试数据或代码有问题）：`);
+  for (const r of refusals) console.log(`          ${r.name} → ${r.stage}：${r.detail}`);
+}
+console.log(`        forge_director_run 各次调用：`);
+for (const r of runCalls) console.log(`          ok=${r.ok} step=${r.step ?? "-"} needsModel=${r.needsModel ?? "-"} stopReason=${r.hasStopReason} ${r.stage ?? ""} ${r.detail}`);
+
 const uncoveredItems = [...itemCoverage.entries()].filter(([, hit]) => !hit).map(([k]) => k);
 t("条目级 schema 覆盖情况可见（未覆盖的必须列出来，不静默放过）", () => {
   assert.ok(itemCoverage.size > 0, "一个数组条目声明都没收集到，说明追踪本身失效了");
