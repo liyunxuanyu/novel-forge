@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import * as g from "../lib/gates.js";
+import * as g2 from "../lib/director.js";
 import * as wh from "../lib/warehouse.js";
 
 let passed = 0;
@@ -122,25 +123,37 @@ await t("策略文件坏掉时回退默认，而不是崩", async () => {
 await t("四级严重度定义齐全", () => {
   assert.deepEqual(Object.keys(g.SEVERITY).sort(), ["s1", "s2", "s3", "s4"]);
 });
-await t("S1/S2 当场阻断，不进台账", async () => {
+
+// 这一条原来叫「S1/S2 当场阻断，不进台账」，断言的是 r.debt === undefined。
+// 那条设计有个致命后果：结论在真源里**根本不存在**——子代理下一轮看不到它，
+// 导演没有规则读它，会话一断就没了。真机上第 1 章因此空转了一轮：
+// 审读报 s2 → 结论蒸发 → 导演仍停在审读中 → 再审一轮 → 又报同一个 s2。
+// 无声死循环，比崩溃难发现得多。现在阻断项也落档，用状态区分。
+await t("S1/S2 记为阻断项：落档、标未处置、计入未清债", async () => {
   for (const severity of ["s1", "s2"]) {
     const r = await g.recordFinding(ws, BOOK, { chapter: "ch0001", severity, quote: "他说：我不记得了", note: "与第三章已定稿矛盾" });
     assert.equal(r.ok, true);
     assert.equal(r.blocked, true);
-    assert.equal(r.action, "阻断");
-    assert.equal(r.debt, undefined, "阻断的问题不该进台账");
+    assert.match(r.action, /阻断项/);
+    assert.ok(r.debt, "阻断项也必须落档，否则它会蒸发");
+    assert.equal(r.debt.status, "未处置", "阻断项用状态区分，好让导演当场停下问作者");
   }
   const l = await g.listDebts(ws, BOOK);
-  assert.equal(l.total, 0, "S1/S2 把台账写脏了");
+  assert.equal(l.total, 2, "阻断项要落档");
+  assert.equal(l.blocking, 2, "两条都还是未处置");
+  assert.equal(l.open, 2, "未处置也算未清债");
+  assert.equal(l.bySeverity.s1, 1);
+  assert.equal(l.bySeverity.s2, 1);
 });
 await t("S3/S4 记为质量债并提交，不阻塞流程", async () => {
   const r = await g.recordFinding(ws, BOOK, { chapter: "ch0001", severity: "s3", dimension: "信息密度", quote: "他站在窗前", note: "连续三段都在描述同一件事" });
   assert.equal(r.ok, true);
   assert.equal(r.blocked, false);
-  assert.equal(r.debt.id, "d0001");
+  // 编号接着前面两条阻断项走：s1/s2 现在也落档，所以 s3 是 d0003。
+  assert.equal(r.debt.id, "d0003");
   assert.equal(r.debt.status, "未处理");
   const log = await wh.git(["log", "-1", "--format=%s"], ws);
-  assert.match(log.stdout.trim(), /^design: 记质量债 d0001/);
+  assert.match(log.stdout.trim(), /^design: 记质量债 d0003/);
 });
 await t("质量债台账落在书仓并入库", async () => {
   assert.ok(existsSync(g.debtPath(ws, BOOK)));
@@ -151,7 +164,7 @@ await t("S4 也记债", async () => {
   const r = await g.recordFinding(ws, BOOK, { chapter: "ch0001", severity: "s4", quote: "他的心中充满了", note: "AI 味重" });
   assert.equal(r.ok, true);
   assert.equal(r.blocked, false);
-  assert.equal(r.debt.id, "d0002");
+  assert.equal(r.debt.id, "d0004");
 });
 await t("非法严重度被拒", async () => {
   const r = await g.recordFinding(ws, BOOK, { severity: "s9", quote: "x", note: "y" });
@@ -170,7 +183,7 @@ await t("豁免不写理由被拒", async () => {
   assert.equal(r.ok, false);
   assert.equal(r.stage, "reason-required");
 });
-await t("豁免写入理由并提交", async () => {
+await t("豁免写入理由并提交（阻断项也能直接豁免，不必绕道 chapter.blocked）", async () => {
   const r = await g.waiveDebt(ws, BOOK, "d0001", "这一处是有意重复，用来压住节奏，不改");
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.debt.status, "已豁免");
@@ -220,6 +233,8 @@ await t("台账统计按严重度分开，且已处理/已豁免的不计入未�
   assert.equal(open.open, 3);
   assert.equal(open.bySeverity.s3, 1);
   assert.equal(open.bySeverity.s4, 2);
+  assert.equal(open.bySeverity.s1, 0, "已豁免的 s1 不该再计入");
+  assert.equal(open.bySeverity.s2, 0);
   assert.equal(open.entries.length, 3);
   assert.ok(all.total > open.open, "历史条目应当仍然保留");
   assert.equal(open.entries.every((e) => e.status === "未处理"), true);
@@ -232,6 +247,84 @@ await t("按严重度筛选能只看某一级", async () => {
   const after = await g.listDebts(ws, BOOK, { status: "未处理" });
   assert.equal(after.bySeverity.s3, 0);
   assert.equal(after.bySeverity.s4, 2);
+});
+
+// ── 阻断项的答复通路（chapter.blocked）────────────────────────────────────
+//
+// 这一组测的是本轮真正修的那个 bug。此前 recordFinding 对 s1/s2 直接 return，
+// 什么都不写；而 SEVERITY.s2.blocks = true 又没有对应的 DECISIONS 节点，
+// 于是「阻断」既没有落档、也没有人问、更没有答复的入口。
+await t("chapter.blocked 是 stop 级，且给了三个可选项", () => {
+  const c = g.gateCheck(policy, "chapter.blocked");
+  assert.equal(c.level, "stop", "auto 会让模型替作者改设定");
+  assert.equal(c.proceed, false);
+  assert.equal(c.requiresDecision, true);
+  assert.equal(c.decisions[0].options.length, 3);
+  assert.deepEqual(c.decisions[0].options, ["按发现项改掉再定稿", "判定不算问题并记录理由", "退回重写这一章"]);
+});
+
+await t("阻断规则排在审读之前——否则会审读→报s2→再审读的死循环", () => {
+  const rule = g2.RULES.find((r) => r.id === "chapter-blocked");
+  assert.ok(rule, "没有这条规则，阻断项就没人消费，等于蒸发");
+  assert.equal(rule.when({ chapterBlocking: 1 }), true);
+  assert.equal(rule.when({ chapterBlocking: 0 }), false);
+  const i = (id) => g2.RULES.findIndex((r) => r.id === id);
+  assert.ok(i("chapter-blocked") < i("chapter-review"), "必须排在 chapter-review 之前，否则又去审一轮");
+  assert.ok(i("chapter-blocked") < i("chapter-revise"), "也必须排在改稿之前");
+  assert.ok(i("chapter-blocked") < i("chapter-settle"), "带着没答的阻断项不许定稿");
+});
+
+await t("阻断项拦得住整卷闸门：不处置就不放行", async () => {
+  // 这条防的是最坏的一种：s2 被当成「已经上报过了」而没进未清债，
+  // 于是整卷闸门显示「没有未清质量债，可以整卷定稿」。
+  const r = await g.recordFinding(ws, BOOK, { chapter: "ch0009", severity: "s2", quote: "q9", note: "未处置的阻断项" });
+  assert.equal(r.debt.status, "未处置");
+  const gate = await g.debtGate(ws, BOOK);
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /阻断项/);
+});
+
+await t("处置阻断项：转为待改，不是删掉——改稿要带着它", async () => {
+  const d = await g.dispositionBlocking(ws, BOOK, "ch0009", "按发现项改掉再定稿");
+  assert.equal(d.ok, true);
+  assert.equal(d.changed, 1);
+  assert.equal(d.waived, false);
+  assert.equal((await g.blockingFindings(ws, BOOK, "ch0009")).length, 0, "处置过的不该再挡住导演");
+  const list = await g.listDebts(ws, BOOK);
+  assert.equal(list.entries.find((e) => e.id === d.ids[0]).status, "未处理", "转成普通待办，整卷前仍要结清");
+});
+
+await t("处置阻断项：判定不算问题必须写理由", async () => {
+  const r = await g.recordFinding(ws, BOOK, { chapter: "ch0010", severity: "s2", quote: "q10", note: "第二条阻断项" });
+  const noReason = await g.dispositionBlocking(ws, BOOK, "ch0010", "判定不算问题并记录理由", "  ");
+  assert.equal(noReason.ok, false);
+  assert.equal(noReason.stage, "reason-required");
+  assert.equal((await g.blockingFindings(ws, BOOK, "ch0010")).length, 1, "被拒时不该改动台账");
+  const ok = await g.dispositionBlocking(ws, BOOK, "ch0010", "判定不算问题并记录理由", "细纲那一条已改过，此处写法合法");
+  assert.equal(ok.ok, true);
+  assert.equal(ok.waived, true);
+  const list = await g.listDebts(ws, BOOK);
+  const entry = list.entries.find((e) => e.id === r.debt.id);
+  assert.equal(entry.status, "已豁免");
+  assert.match(entry.waiver.reason, /细纲那一条/);
+});
+
+await t("处置只动本章：别的章的阻断项不受影响", async () => {
+  await g.recordFinding(ws, BOOK, { chapter: "ch0020", severity: "s1", quote: "q20", note: "第二十章的问题" });
+  await g.recordFinding(ws, BOOK, { chapter: "ch0021", severity: "s1", quote: "q21", note: "第二十一章的问题" });
+  const d = await g.dispositionBlocking(ws, BOOK, "ch0020", "按发现项改掉再定稿");
+  assert.equal(d.changed, 1);
+  const left = await g.blockingFindings(ws, BOOK, "ch0021");
+  assert.equal(left.length, 1, "处置一章不该顺手清掉别章的阻断项");
+  await g.dispositionBlocking(ws, BOOK, "ch0021", "判定不算问题并记录理由", "测试用：已确认不是问题");
+});
+
+await t("blockingFindings 不带章号时列全书的未处置项", async () => {
+  await g.recordFinding(ws, BOOK, { chapter: "ch0030", severity: "s2", quote: "q30", note: "全书范围查得到" });
+  const all = await g.blockingFindings(ws, BOOK);
+  assert.ok(all.some((e) => e.chapter === "ch0030"));
+  assert.ok(all.every((e) => e.status === "未处置"), "只列还没处置的");
+  await g.dispositionBlocking(ws, BOOK, "ch0030", "判定不算问题并记录理由", "测试用：已确认不是问题");
 });
 
 await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
