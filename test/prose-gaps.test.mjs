@@ -14,7 +14,7 @@
  * 正的与反的两侧都要有，否则一个「永远返回空数组」的实现照样能过。
  */
 import assert from "node:assert/strict";
-import { proseGaps, renderProseGaps, measureProse, proseFindings } from "../lib/prose.js";
+import { proseGaps, renderProseGaps, renderProseMetrics, measureProse, proseFindings } from "../lib/prose.js";
 
 let passed = 0;
 const failures = [];
@@ -42,13 +42,21 @@ const HEALTHY = {
   funcDensity: 92, connectiveDensity: 105, longSentenceRatio: 0.20,
 };
 
-/** 刚过噪声线的一稿：每项都只差 20% 多一点，属于「可以不管」。 */
+/** 刚过噪声线的一稿：每项都只差 20% 多一点。 */
 const SLIGHTLY_OFF = {
   ...V8_SHAPED,
   commaLongRatio: 0.60,   // 对中心 0.77 是 -22%
   sentenceAvg: 18.2,      // 对中心 23 是 -21%
   funcDensity: 74,        // 对下限 85 是 -13% → 不该进
-  dialogueRatio: 0.40,    // 对中心 0.50 是 -20% → 不该进（临界）
+  dialogueRatio: 0.40,
+};
+
+/** 有一项差到要换架构的一稿：逗号长句 0.28 对中心 0.77 是 -64%。 */
+const FAR_SHAPED = {
+  ...V8_SHAPED,
+  commaLongRatio: 0.28,
+  sentenceAvg: 24,        // 这一项达标，用来确认它不会跟着被点名
+  funcDensity: 90,
 };
 
 await t("正好达标的一稿：一项都不报", async () => {
@@ -56,23 +64,36 @@ await t("正好达标的一稿：一项都不报", async () => {
   assert.equal(renderProseGaps(HEALTHY), "", "没有结构活时不该渲染出空标题");
 });
 
-await t("真机上那份歪稿：四项全部进结构活，只有对话被标为换架构", async () => {
+await t("真机上那份歪稿：三项进结构活", async () => {
   const gaps = proseGaps(V8_SHAPED);
   const names = gaps.map((g) => g.name);
-  // 实测四项分别是 -94% / -45.5% / -29.6% / -23.1%，全部超出 20% 噪声线。
+  // 实测三项分别是 -45.5% / -29.6% / -23.1%，全部超出 20% 噪声线。
   // 一个只报「超过 50%」的实现会漏掉三项——那三项正是句子架构的问题。
   assert.deepEqual(
     names.sort(),
-    ["对话占比", "整句均长", "虚词密度", "逗号长句占比"].sort(),
+    ["整句均长", "虚词密度", "逗号长句占比"].sort(),
     `实际只报了 ${names.join("、")}`,
   );
-  const far = gaps.filter((g) => g.far).map((g) => g.name);
-  assert.deepEqual(far, ["对话占比"], "只有 -94% 那项该标换架构");
 });
 
-await t("差得最远的排最前（对话 3% 差得比逗号长句更远）", async () => {
+await t("对话占比不进结构活——它是场景构成的取舍，归细纲与契约管", async () => {
+  // 这条钉的是一个**归类**判断，不是数字。第一版把对话占比放进来了：
+  // v8 上算出 -94%，被标〔换架构〕排第一条，而改稿子代理交回时写「无法执行」
+  // ——本章〔硬〕只允许一个有面孔的人、〔硬〕不许任何人解释或察觉异常，
+  // 硬堆对白会直接违反细纲。随后两个独立的审读子代理都判它
+  // 「已核对，不算问题」，理由一致：这一章的戏剧核心就是「话不能被复述」。
+  //
+  // 撤出不等于丢信号：它仍在体检表与 proseFindings 里，那两条路允许审读者
+  // 表态。**只有 proseGaps 会把一个指标变成强制指令**，对话比例不该被这样对待。
+  const gaps = proseGaps({ ...V8_SHAPED, dialogueRatio: 0.001 });
+  assert.equal(gaps.map((g) => g.name).includes("对话占比"), false, "差得再远也不该进这一节");
+  // 但它必须还在体检表里，否则就成了「眼不见为净」。
+  assert.match(renderProseMetrics(V8_SHAPED), /对话占比/);
+});
+
+await t("差得最远的排最前", async () => {
   const gaps = proseGaps(V8_SHAPED);
-  assert.equal(gaps[0].name, "对话占比", `实际第一名是 ${gaps[0].name}`);
+  assert.equal(gaps[0].name, "逗号长句占比", `实际第一名是 ${gaps[0].name}`);
   // 相对偏离单调递增（都是负数，越负越靠前）
   for (let i = 1; i < gaps.length; i += 1) {
     assert.ok(gaps[i - 1].rel <= gaps[i].rel, "排序该按偏离从大到小");
@@ -83,7 +104,6 @@ await t("组内浮动内的项不报——不许制造无谓动笔", async () =>
   const gaps = proseGaps(SLIGHTLY_OFF);
   const names = gaps.map((g) => g.name);
   assert.equal(names.includes("虚词密度"), false, "差 13% 属组内浮动，不该报");
-  assert.equal(names.includes("对话占比"), false, "差 20% 是临界，不该报");
   // 差 21–22% 的那两项超了噪声线，要报
   assert.ok(names.includes("逗号长句占比"));
   assert.ok(names.includes("整句均长"));
@@ -97,19 +117,29 @@ await t("渲染文案把结构活与发现项分开，并给出「怎么改」",
   assert.match(text, /别用作弊的方式凑数/, "要给反作弊边界");
 });
 
-await t("换架构的那项单独点名", async () => {
-  const text = renderProseGaps(V8_SHAPED);
-  assert.match(text, /对话占比.*不是.*量级/s);
+await t("差到要换架构的那项单独点名", async () => {
+  const text = renderProseGaps(FAR_SHAPED);
+  assert.match(text, /逗号长句占比.*不是.*量级/s);
   assert.match(text, /〔换架构〕/);
   // 最后这句是防「指标导向」的：把数字当目的地会写出更假的东西。
   assert.match(text, /指标是路标，不是目的地/);
 });
 
-await t("反作弊边界覆盖三种最常见的凑数法", async () => {
+await t("没差到换架构就不点「换架构」——别把 -30% 说成推倒重来", async () => {
+  const text = renderProseGaps(V8_SHAPED);
+  assert.equal(text.includes("〔换架构〕"), false, "v8 三项都在 -50% 以内，没有一项该标换架构");
+  assert.equal(text.includes("不是一个量级"), false, "也不该出现那句总结");
+});
+
+await t("反作弊边界：明说对话占比不归这一节管", async () => {
+  // 体检表里**仍然有**对话占比那一行（归 proseFindings 与审读者管），
+  // 而结构活里故意没有它。写手看到「表里有、清单里没有」，很可能自己
+  // 脑补出「要把对话拉到 50%」——第 1 章就是这么翻的车。所以要把话说明白。
   const text = renderProseGaps(V8_SHAPED);
   assert.match(text, /不要把本来该短的地方拉长/);
-  assert.match(text, /不要为了对话占比硬加寒暄/);
   assert.match(text, /不要把一句拆成三句再补虚词/);
+  assert.match(text, /对话占比那项\*\*不在这一节里\*\*/);
+  assert.match(text, /不要为了它硬加寒暄/);
 });
 
 await t("〔硬〕约束优先于结构活：不许为了拉形状违反细纲", async () => {
