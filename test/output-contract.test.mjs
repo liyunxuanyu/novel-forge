@@ -328,10 +328,15 @@ const scenarios = [
   // 换一个 stop 级节点，把 decisions 的条目真正走一遍。
   ["forge_gate_check", { title: BOOK, node: "chapter.settle" }],
   ["forge_gate_check", { title: BOOK, node: "不存在的节点" }],
+  // 闸门答复的三条失败路径都要走：乱写的选项、没有流程记录的章、缺参数。
+  // 成功路径由 revision-cap.test.mjs 覆盖（这里造不出「正好停在闸门上」的章）。
+  ["forge_gate_decide", { title: BOOK, chapter: 1, node: "chapter.revise_exhausted", choice: "再改三轮吧" }],
+  ["forge_gate_decide", { title: BOOK, chapter: 9, node: "chapter.revise_exhausted", choice: "再改一轮并放宽标准" }],
   ["forge_list_debts", { title: BOOK }],
   ["forge_chapter_status", { title: BOOK, chapter: 1 }],
   // 不带章号走的是 chapters 那条路；带章号走单章形状。两条路都要走。
   ["forge_chapter_status", { title: BOOK }],
+  ["forge_artifact_candidate", { title: BOOK, artifact: "skeleton", body: "# 骨架\n" }],
   // 骨架必须带「## 索引」，否则 forge_consistency_check 会在 no-index 处早退，
   // missing / typeMismatch / extra 三个条目级 schema 永远走不到（覆盖表早就点名了这三处）。
   // 这里刻意造出三种不匹配：
@@ -401,6 +406,9 @@ const scenarios = [
   ["forge_draft_task", { title: BOOK, chapter: 1, volume: 1 }],
   ["forge_import_draft", { title: BOOK, chapter: 1, volume: 1, body: "正文草稿。" }],
   ["forge_dispatch_review", { title: BOOK, chapter: 1 }],
+  // 闸门答复的成功路径：到这里第 1 章已经有流程记录了（上面那次 import 建的）。
+  // 这条必须排在它之后 —— 排在前面只会拿到 no-chapter，整个工具就只走失败分支。
+  ["forge_gate_decide", { title: BOOK, chapter: 1, node: "chapter.revise_exhausted", choice: "再改一轮并放宽标准", note: "作者看过。" }],
   ["forge_record_findings", { title: BOOK, chapter: 1, covered: ["文风"], findings: [], summary: "零发现项。" }],
   // 离线不真写字，正文只有 5 个字，所以这里显式走 allowShort 这条**作者本来就有**的
   // 放行口（短章、番外）。不放行的话定稿被拦，章节停在待定稿，

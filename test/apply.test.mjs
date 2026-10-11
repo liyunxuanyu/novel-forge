@@ -48,6 +48,7 @@ const TOOL_NAMES = [
   // 门禁与质量债
   "forge_gate_status",
   "forge_gate_check",
+  "forge_gate_decide",
   "forge_record_finding",
   "forge_list_debts",
   "forge_settle_debt",
@@ -185,7 +186,7 @@ await t("随包技能已挂载且隔离用户根", () => {
   assert.equal(skill.config.providerName, "forge-bundled");
   assert.equal(skill.config.includeDefaultRoots, false);
 });
-await t("注册全部 40 个工具，名字与顺序符合约定", () => {
+await t("注册全部 41 个工具，名字与顺序符合约定", () => {
   assert.deepEqual(ctx.registered.map((t) => t.name), TOOL_NAMES);
 });
 await t("每个工具都带 output.render（宿主要求）", () => {

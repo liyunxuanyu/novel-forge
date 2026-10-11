@@ -234,7 +234,7 @@ await t("宿主入口：导入、注册、卸载全通", async () => {
     if (typeof tool.parameters !== "object" || tool.parameters === null) bad.push(`${tool.name}：缺 parameters`);
   }
   assert.deepEqual(bad, [], `这些工具有问题：\n${bad.join("\n")}`);
-  assert.equal(registered.length, 40, `工具数应当是 40，实际 ${registered.length}`);
+  assert.equal(registered.length, 41, `工具数应当是 41，实际 ${registered.length}`);
   assert.ok(effects.length > 0, "卸载钩子必须登记，否则重复装载会叠加");
   // 每个 effect 都必须**返回**清理函数：cordis 只收集返回的那个
   // （lib/index.js:1142-1143）。返回 undefined 就等于没有卸载钩子。

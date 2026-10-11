@@ -65,13 +65,13 @@ for (const [artifact, body] of Object.entries({
 }
 
 /** 走完一轮「派审读 → 回写一条发现项」，把章留在待改。 */
-async function oneBadRound(body, note) {
-  const imp = await call("forge_import_draft", { title: BOOK, chapter: 1, body, origin: "改稿" });
+async function oneBadRound(body, note, chapter = 1) {
+  const imp = await call("forge_import_draft", { title: BOOK, chapter, body, origin: "改稿" });
   assert.equal(imp.ok, true, JSON.stringify(imp));
-  const disp = await call("forge_dispatch_review", { title: BOOK, chapter: 1 });
+  const disp = await call("forge_dispatch_review", { title: BOOK, chapter });
   assert.equal(disp.ok, true, JSON.stringify(disp));
   const rec = await call("forge_record_findings", {
-    title: BOOK, chapter: 1, covered: ["结构"],
+    title: BOOK, chapter, covered: ["结构"],
     findings: [{ quote: body.slice(0, 4), note }],
   });
   assert.equal(rec.ok, true, JSON.stringify(rec));
@@ -159,6 +159,66 @@ await t("上限只对到顶的那一章生效，下一章从头自动改", async
   const d2 = await call("forge_dispatch_review", { title: BOOK, chapter: 2 });
   assert.equal(d2.ok, true, JSON.stringify(d2));
   assert.equal(d2.revisions, 1, `新一轮要从 1 数起，不是接着上一章的轮次（实际 ${d2.revisions}）`);
+});
+
+// ── 作者答复要能执行 ────────────────────────────────────────────────────
+// 闸门以前只会停：给三个选项，作者挑一个，然后没有任何东西记下这个选择，
+// 导演下一次问还是同一句。作者选「再改一轮」，链条照样死在原地——
+// 一个能问却不能执行答复的闸门，把「无人值守」变成「每章改配置」。
+await t("写错的选项被拒，不会静默什么都不做", async () => {
+  const bad = await call("forge_gate_decide", {
+    title: BOOK, chapter: 2, node: "chapter.revise_exhausted", choice: "再改三轮吧",
+  });
+  assert.equal(bad.ok, false, `乱写的选项不该被接受：${JSON.stringify(bad)}`);
+  assert.equal(bad.stage, "unknown-choice");
+  assert.match(String(bad.detail ?? ""), /再改一轮并放宽标准/, "拒绝时要把合法选项列出来");
+});
+
+await t("把第 2 章也推到上限：闸门同样会停", async () => {
+  // 上面那条测试把第 2 章留在了「审读中」（派了审读、还没回写），先落地这一轮。
+  const seed = await call("forge_record_findings", {
+    title: BOOK, chapter: 2, covered: ["结构"],
+    findings: [{ quote: "第二章初稿。", note: "初稿太平" }],
+  });
+  assert.equal(seed.ok, true, JSON.stringify(seed));
+  await oneBadRound("第二章第二版。", "还是太平", 2);
+  await oneBadRound("第二章第三版。", "依旧", 2);
+  const n = await next();
+  assert.equal(n.node, "chapter.revise_exhausted", `实际 ${n.node}（rule=${n.rule}）`);
+  assert.equal(n.proceed, false);
+});
+
+await t("作者选「再改一轮并放宽标准」：导演重新放行改稿，而不是继续卡着", async () => {
+  const dec = await call("forge_gate_decide", {
+    title: BOOK, chapter: 2, node: "chapter.revise_exhausted",
+    choice: "再改一轮并放宽标准", note: "作者看过：剩下的都是措辞，值得再走一轮。",
+  });
+  assert.equal(dec.ok, true, JSON.stringify(dec));
+  assert.equal(dec.grantedExtraRounds, 1, "这一项应当放开 1 轮");
+  assert.equal(dec.reviseWaiver, 1);
+  assert.equal(dec.stage, "待改", "答复不改阶段");
+
+  const n = await next();
+  assert.equal(n.node, "chapter.revise", `作者放行后应当重新派改稿，实际 ${n.node}（rule=${n.rule}）`);
+  assert.equal(n.proceed, true);
+});
+
+await t("放开的是轮数不是闸门：这一轮改完再到顶，还会再问一次", async () => {
+  await oneBadRound("第二章第四版。", "第四轮还是不行", 2);
+  const n = await next();
+  assert.equal(n.node, "chapter.revise_exhausted", `放开 1 轮之后应当重新到顶，实际 ${n.node}（rule=${n.rule}）`);
+  assert.equal(n.proceed, false, "不能一路自动改下去");
+});
+
+await t("答复落进真源：状态里有作者的选择原文", async () => {
+  const st = await call("forge_chapter_status", { title: BOOK, chapter: 2 });
+  assert.equal(st.ok, true, JSON.stringify(st));
+  const raw = JSON.parse(await fs.readFile(path.join(ws, "草稿", BOOK, "ch0002", "状态.json"), "utf8"));
+  assert.equal(raw.gateDecision.node, "chapter.revise_exhausted");
+  assert.equal(raw.gateDecision.choice, "再改一轮并放宽标准");
+  assert.match(String(raw.gateDecision.note ?? ""), /剩下的都是措辞/);
+  assert.equal(raw.reviseWaiver.extraRounds, 1);
+  assert.equal(raw.reviseWaiver.standard, "放宽");
 });
 
 await fs.rm(ws, { recursive: true, force: true });
