@@ -131,7 +131,9 @@ await t("四级严重度定义齐全", () => {
 // 无声死循环，比崩溃难发现得多。现在阻断项也落档，用状态区分。
 await t("S1/S2 记为阻断项：落档、标未处置、计入未清债", async () => {
   for (const severity of ["s1", "s2"]) {
-    const r = await g.recordFinding(ws, BOOK, { chapter: "ch0001", severity, quote: "他说：我不记得了", note: "与第三章已定稿矛盾" });
+    // 引文要各不相同：台账现在按「同章 + 同引文 + 同说明」去重，
+    // 两条一模一样的会被认成同一件事（那是刻意的，见下面那条去重测试）。
+    const r = await g.recordFinding(ws, BOOK, { chapter: "ch0001", severity, quote: `${severity} 的引文`, note: "与第三章已定稿矛盾" });
     assert.equal(r.ok, true);
     assert.equal(r.blocked, true);
     assert.match(r.action, /阻断项/);
@@ -166,6 +168,43 @@ await t("S4 也记债", async () => {
   assert.equal(r.blocked, false);
   assert.equal(r.debt.id, "d0004");
 });
+await t("同一件事重复报上来，台账里不许长出第二条", async () => {
+  // 审读每轮都重跑，没修掉的问题会被一轮轮重新报上来。以前无条件新建，
+  // 于是「一条 s2 改不掉 → 下一轮再报 → 又一条 → 导演每轮都停在
+  // chapter.blocked 上问同一句」。那不是报错，是无声地反复问同一句。
+  const first = await g.recordFinding(ws, BOOK, { chapter: "ch0005", severity: "s3", quote: "重复的引文", note: "重复的说明" });
+  assert.equal(first.reused, undefined);
+  const again = await g.recordFinding(ws, BOOK, { chapter: "ch0005", severity: "s3", quote: "重复的引文", note: "重复的说明" });
+  assert.equal(again.reused, true, "第二次要复用");
+  assert.equal(again.debt.id, first.debt.id, "编号必须还是原来那个");
+  assert.equal(again.commit, null, "没变就不该产生提交");
+
+  // 但**升级**不算重复：上一轮作者说「按发现项改掉」，改稿没改动，
+  // 这一轮它又以 s2 报上来——那就该重新挂起，让导演再问一次。
+  await g.dispositionBlocking(ws, BOOK, "ch0005", "按发现项改掉再定稿", "改掉它");
+  const before = await g.listDebts(ws, BOOK);
+  const target = before.entries.find((e) => e.id === first.debt.id);
+  assert.equal(target.status, "未处理", "处置后转成待改");
+
+  const escalated = await g.recordFinding(ws, BOOK, { chapter: "ch0005", severity: "s2", quote: "重复的引文", note: "重复的说明" });
+  assert.equal(escalated.reused, true, "还是同一条，不新建");
+  assert.equal(escalated.debt.id, first.debt.id);
+  assert.equal(escalated.blocked, true, "改稿没消掉，就该重新挂为阻断项");
+  const after = await g.listDebts(ws, BOOK);
+  assert.equal(after.entries.find((e) => e.id === first.debt.id).status, "未处置");
+});
+
+await t("处置理由要存下来——选项名本身执行不了", async () => {
+  // 「按发现项改掉再定稿」是决定，「删掉『靠前两个字先没了』」才是要照着做的话，
+  // 而后者写在理由里。理由不存，改稿者就只剩发现项自己的「二选一」可挑。
+  await g.recordFinding(ws, BOOK, { chapter: "ch0006", severity: "s2", quote: "要记录的引文", note: "要记录的说明" });
+  await g.dispositionBlocking(ws, BOOK, "ch0006", "按发现项改掉再定稿", "删掉「靠前两个字先没了」，让限定词只是渐糊");
+  const l = await g.listDebts(ws, BOOK);
+  const e = l.entries.find((x) => String(x.chapter) === "ch0006");
+  assert.equal(e.disposition.choice, "按发现项改掉再定稿");
+  assert.match(e.disposition.reason, /删掉「靠前两个字先没了」/, "理由必须落档，否则改稿者只能自己挑一个方案");
+});
+
 await t("非法严重度被拒", async () => {
   const r = await g.recordFinding(ws, BOOK, { severity: "s9", quote: "x", note: "y" });
   assert.equal(r.ok, false);
