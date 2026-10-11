@@ -20,8 +20,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { directorTools } from "../lib/tools-director.js";
+import { directorTools, liftUnresolved } from "../lib/tools-director.js";
 import { chapterTools } from "../lib/tools-chapter.js";
+import { gateTools } from "../lib/tools-gates.js";
 import { RULES } from "../lib/director.js";
 import * as wh from "../lib/warehouse.js";
 import * as cs from "../lib/chapter-state.js";
@@ -104,6 +105,9 @@ function toolsWith(body) {
   // 回写发现项在章节工具集里，不在导演工具集里 —— 链条跨两个工具集，
   // 测试就得把两边的真家伙都装上，否则测的是我拼出来的假链条。
   for (const def of chapterTools(ctx, () => ws)) byName.set(def.name, defineTool(def));
+  // 闸门答复在门禁工具集里。改稿到顶之后导演会停，只有作者答复能放行 ——
+  // 这条链要把「停 → 答复 → 继续」整段走一遍，就得装上真家伙。
+  for (const def of gateTools(ctx, () => ws)) byName.set(def.name, defineTool(def));
   // exec.agent 必须给：派子代理要有个父级，而且引擎要读 parent.session 定沙箱策略。
   return (n, a) => byName.get(n).execute(a ?? {}, { agent: { session: { id: "test-session" } }, signal: new AbortController().signal });
 }
@@ -222,6 +226,61 @@ await t("改稿步骤也自己落稿：v2 在盘上，latest 指向它", async (
   assert.match(s.draft.origin, /改稿子代理/);
   const abs = path.join(ws, "草稿", BOOK, KEY, "稿件", "v2.md");
   assert.equal(await fs.readFile(abs, "utf8"), FIXED);
+});
+
+// ── 第四跳：〔未处置〕说明不能跟着正文进定稿 ────────────────────────────
+// 改稿者被要求「〔硬〕优先于发现项」，两条都不能满足时用一行〔未处置〕说明。
+// 那是给作者看的话，但它只有返回值这一个渠道——不摘就会一路走进定稿。
+// 真机上第 1 章 v4 的末行就是它。
+await t("改稿者留下的〔未处置〕说明被摘出来，不进正文，也不丢", async () => {
+  // 上一条测试把这一章留在「待审」，先派一轮审读才允许回写发现项。
+  const d = await call("forge_dispatch_review", { title: BOOK, chapter: 1 });
+  assert.equal(d.ok, true, JSON.stringify(d));
+  const rec = await call("forge_record_findings", {
+    title: BOOK, chapter: 1, covered: ["人物"],
+    findings: [{ dimension: "人物", quote: "他最后还是进去了", note: "进去得太顺" }],
+  });
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+
+  // 这一章在本文件里已经改满三轮，导演会停在 chapter.revise_exhausted 上。
+  // 顺路把「闸门停 → 作者答复 → 导演放行」走一遍，别绕过它。
+  const dec = await call("forge_gate_decide", {
+    title: BOOK, chapter: 1, node: "chapter.revise_exhausted", choice: "再改一轮并放宽标准",
+  });
+  assert.equal(dec.ok, true, JSON.stringify(dec));
+  assert.equal(dec.grantedExtraRounds, 1);
+  const nxt = await call("forge_director_next", { title: BOOK });
+  assert.equal(nxt.node, "chapter.revise", "答复之后导演必须重新放行改稿");
+  assert.equal(nxt.proceed, true);
+
+  const BODY = "雨下了三天。\n他站在门口，没进去。\n他最后还是进去了。\n";
+  const NOTE = "〔未处置〕发现项 3：细纲〔硬〕不写他在数什么，与该项要求的「给一个具体所指」不能并存，已保留〔硬〕。";
+  const call5 = toolsWith(`${BODY}${NOTE}\n`);
+  const r = await call5("forge_director_run", { title: BOOK });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.match(r.detail, /已自动落稿 v3/);
+  assert.match(r.detail, /1 条未处置说明/, "摘出来的说明必须报给调用方，不能默默丢掉");
+  assert.match(r.detail, /保留〔硬〕/);
+
+  const abs = path.join(ws, "草稿", BOOK, KEY, "稿件", "v3.md");
+  const onDisk = await fs.readFile(abs, "utf8");
+  assert.equal(onDisk, BODY.replace(/\s+$/, ""), "〔未处置〕是给作者的话，不是正文，不能跟着进定稿");
+  assert.doesNotMatch(onDisk, /〔未处置〕/);
+});
+
+await t("liftUnresolved：正文中间的〔未处置〕不误删，摘干净了也不交空正文", () => {
+  const mid = "他说：「〔未处置〕这四个字我见过。」\n后面还有正文。\n";
+  assert.equal(liftUnresolved(mid).body, mid, "中间出现的多半是对话或引文，不能删");
+
+  const onlyNote = "〔未处置〕发现项 1：撞了〔硬〕。\n";
+  const r = liftUnresolved(onlyNote);
+  assert.equal(r.notes.length, 1);
+  assert.equal(r.body, onlyNote, "摘干净了宁可原样还回去，也不能把正文变成空字符串");
+
+  const two = "正文。\n\n〔未处置〕第一条。\n〔未处置〕第二条。\n";
+  const r2 = liftUnresolved(two);
+  assert.deepEqual(r2.notes, ["第一条。", "第二条。"]);
+  assert.equal(r2.body, "正文。");
 });
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
