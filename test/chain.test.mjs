@@ -171,7 +171,9 @@ async function driveChapter(num) {
 
   const draft = await call("forge_director_run", { title: BOOK, context: { taskText: `写第${num}章` } });
   assert.equal(draft.ok, true, JSON.stringify(draft));
-  assert.equal((await call("forge_import_draft", { title: BOOK, chapter: num, body: draft.done[0], origin: "AI 起草" })).ok, true);
+  // 落稿是导演自己做的（director-auto.test.mjs 盯着这一跳）。这里再补一次
+  // forge_import_draft 会写成 v2，而审读子代理读的是 latest —— 等于拿一份
+  // 重复稿去审，还把真正的 v1 挤成了历史版本。
 
   let body = draft.done[0];
   for (let round = 1; round <= 3; round++) {
@@ -180,8 +182,9 @@ async function driveChapter(num) {
     const rev = await call("forge_director_run", { title: BOOK, context: { draftText: body } });
     assert.equal(rev.ok, true, JSON.stringify(rev));
     const parsed = JSON.parse(rev.done[0]);
-    const disp = await call("forge_dispatch_review", { title: BOOK, chapter: num, dimensions: ["结构", "文风", "对话"] });
-    assert.equal(disp.ok, true, JSON.stringify(disp));
+    // 派审读也是导演自己做的：跑完这一步状态已经在「审读中」，发现项才回写得进去。
+    // 这里再手动派一次会被状态机拒（dispatch_review 只允许从「待审」出发），
+    // 而重复派还会把改稿轮次多记一遍。
     const rec = await call("forge_record_findings", {
       title: BOOK, chapter: num, covered: ["结构", "文风", "对话"],
       findings: parsed.map((p) => ({ quote: p.quote, note: p.note, dimension: "结构" })),
@@ -195,7 +198,6 @@ async function driveChapter(num) {
     }
     const fixed = await call("forge_director_run", { title: BOOK, context: { findings: parsed, draftText: body } });
     assert.equal(fixed.ok, true, JSON.stringify(fixed));
-    assert.equal((await call("forge_import_draft", { title: BOOK, chapter: num, body: fixed.done[0], origin: "改稿" })).ok, true);
     body = fixed.done[0];
   }
   throw new Error(`第 ${num} 章三轮审读还没过`);
