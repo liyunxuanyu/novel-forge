@@ -137,17 +137,35 @@ await t("改稿步骤：上一轮的发现项自己从流程状态里取到（�
   await writeDraftArea("ch0001/状态.json", JSON.stringify({
     schema: 1, chapter: "ch0001", volume: 1, stage: "待改",
     draft: { version: 1, latest: "稿件/v1.md" },
-    review: { revisions: 1, findings: 1, items: [{ dimension: "人物", quote: "没进去", note: "太软" }] },
+    // itemsRound 必须与 revisions 相等，才说明这份清单是**当前这一轮**的。
+    // 不相等就是上一轮留下的，用了会让改稿者去修已经修过的地方。
+    review: { revisions: 1, itemsRound: 1, findings: 1, items: [{ dimension: "人物", quote: "没进去", note: "太软" }] },
   }));
   const ctx = await autoFillContext(ws, BOOK, act({ step: "revise" }), {});
   assert.deepEqual(
     ctx.findings,
-    [{ dimension: "人物", quote: "没进去", note: "太软" }],
+    [{ dimension: "人物", severity: null, quote: "没进去", note: "太软", id: null }],
     "改稿步骤拿不到上一轮的发现项，这一步就永远 missing-input，自动链退化成人工搬运",
   );
   const spec = buildTaskSpec(act({ step: "revise" }), ctx);
   assert.equal(spec.ok, true, spec.detail);
   assert.match(spec.prompt, /没进去/);
+});
+
+await t("过期的发现项不许进改稿——那是上一轮对着旧稿写的", async () => {
+  // 真机上第 1 章就断在这儿：review.items 里是**两版之前**那一轮的 5 条
+  // （引文来自 v7/v8），而这一轮审读把结论写进了台账。改稿者拿到旧清单，
+  // 去修早就修过的地方。
+  await writeDraftArea("ch0001/状态.json", JSON.stringify({
+    schema: 1, chapter: "ch0001", volume: 1, stage: "待改",
+    draft: { version: 1, latest: "稿件/v1.md" },
+    review: { revisions: 9, itemsRound: 7, findings: 1, items: [{ dimension: "人物", quote: "旧稿里的话", note: "早就改掉了" }] },
+  }));
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "revise" }), {});
+  assert.equal(ctx.findings, undefined, "轮次对不上的清单必须丢掉");
+  const spec = buildTaskSpec(act({ step: "revise" }), ctx);
+  assert.equal(spec.ok, false);
+  assert.equal(spec.stage, "missing-input");
 });
 
 await t("状态里没有发现项时，改稿步骤如实失败，不拿空数组硬跑", async () => {
