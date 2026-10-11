@@ -16,6 +16,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { chapterTools } from "../lib/tools-chapter.js";
 import { warehouseTools } from "../lib/tools-warehouse.js";
 import * as wh from "../lib/warehouse.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -48,7 +49,7 @@ await wh.createBook(ws, {
 });
 
 await t("还没稿子就不许派审读", async () => {
-  assert.equal((await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "〔硬〕x\n" })).ok, true);
+  assert.equal((await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: outlineFixture({ constraints: ["〔硬〕x"] }) })).ok, true);
   assert.equal((await call("forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 })).ok, true);
   assert.equal((await call("forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 })).ok, true);
   const r = await call("forge_dispatch_review", { title: BOOK, chapter: 1 });

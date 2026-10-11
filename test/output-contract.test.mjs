@@ -30,6 +30,7 @@ import { fanoutTools } from "../lib/tools-fanout.js";
 import { deconstructTools } from "../lib/tools-deconstruct.js";
 import { styleTools } from "../lib/tools-style.js";
 import { gateTools } from "../lib/tools-gates.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 /** 与 lib/index.js 的 relaxTopLevelRequired 同构：真机上注册前会这么处理。 */
 const relax = (def) => {
@@ -392,7 +393,7 @@ const scenarios = [
   // 之前 body 只写「第一章细纲。」，于是这个产品最核心的一段链路
   // 离线一次都没跑通过，覆盖表上 5 处条目声明恒为空。
   // 这个洞是靠上面那份「结构化失败清单」才看见的——只校 schema 永远看不见。
-  ["forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "第一章细纲。\n\n〔硬〕主角必须在卷末写下第一个自己不想写的名字。\n〔软〕尽量少用对白，用动作交代关系。\n〔自由〕配角的姓名与外貌可自由发挥。\n" }],
+  ["forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: outlineFixture({ constraints: ["〔硬〕主角必须在卷末写下第一个自己不想写的名字。", "〔软〕尽量少用对白，用动作交代关系。", "〔自由〕配角的姓名与外貌可自由发挥。"] }) }],
   ["forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 }],
   ["forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 }],
   // 生成起草任务包必须排在导演派稿**之前**。导演跑起草那一步会自动落稿，

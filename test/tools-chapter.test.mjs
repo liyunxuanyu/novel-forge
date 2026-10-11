@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { chapterTools } from "../lib/tools-chapter.js";
 import * as wh from "../lib/warehouse.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -66,7 +67,7 @@ await t("还没有章节时，状态查询给出明确指引而不是空结果",
 await t("落候选细纲 → 细纲待确认（草稿区，不是真源）", async () => {
   const r = await call("forge_outline_draft", {
     title: BOOK, chapter: 1, volume: 1,
-    body: "# 第一章 雨夜\n\n〔硬〕沈昭在雨中对仇人开口。\n〔自由〕过程可以慢。\n",
+    body: outlineFixture({ constraints: ["〔硬〕沈昭在雨中对仇人开口。", "〔自由〕过程可以慢。"] }),
   });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.chapter, "ch0001");

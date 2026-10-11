@@ -14,6 +14,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { chapterTools } from "../lib/tools-chapter.js";
 import { warehouseTools } from "../lib/tools-warehouse.js";
 import * as wh from "../lib/warehouse.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -67,18 +68,21 @@ await t("正文里顺口提到「硬要求」不算数，必须标在行首", as
 });
 
 await t("列表符号和序号前面标也算行首", async () => {
-  const r = await tryConfirm(1, "# 第 1 章\n\n- 〔硬〕沈昭必须开口。\n- 〔软〕保留雨声。\n");
+  const r = await tryConfirm(1, outlineFixture({ title: "第 1 章", constraints: ["- 〔硬〕沈昭必须开口。", "- 〔软〕保留雨声。"] }));
   assert.equal(r.ok, true, JSON.stringify(r));
 });
 
 await t("只标一级也认，并回报认出了哪几级", async () => {
-  const r = await tryConfirm(2, "〔自由〕收尾自定。\n");
+  // 这条测的是**分级识别**，不是字段完整性。原来直接给一句「〔自由〕收尾自定。」
+  // 绕过所有结构，现在会被字段闸门先拦下（缺目标情绪与主角关键选择）。
+  // 用夹具托底，只换掉要测的那一条约束。
+  const r = await tryConfirm(2, outlineFixture({ constraints: ["〔自由〕收尾自定。"] }));
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.deepEqual(r.marks, ["自由"], `应当只认出自由级，实际 ${JSON.stringify(r.marks)}`);
 });
 
 await t("被挡之后改正文就能过：候选可以糙，确认不能糙", async () => {
-  const r = await tryConfirm(3, "# 第 3 章\n\n沈昭推开了门。\n\n〔硬〕门必须关上。\n");
+  const r = await tryConfirm(3, outlineFixture({ title: "第 3 章", extra: "沈昭推开了门。\n\n〔硬〕门必须关上。" }));
   assert.equal(r.ok, true, "补上分级后应当放行：" + JSON.stringify(r));
   assert.deepEqual(r.marks, ["硬"], JSON.stringify(r.marks));
 });
@@ -95,7 +99,7 @@ await t("状态没被推进，而且改正文后同章仍能确认，不是死�
   assert.equal(bad.ok, false);
   const outlineFile = path.join(ws, "书仓", BOOK, "大纲", "卷01", "ch0005-细纲.md");
   await assert.rejects(() => fs.access(outlineFile), "被挡的章不该有真源细纲文件");
-  await call("forge_outline_draft", { title: BOOK, chapter: 5, volume: 1, body: "〔硬〕这次标了。\n" });
+  await call("forge_outline_draft", { title: BOOK, chapter: 5, volume: 1, body: outlineFixture({ constraints: ["〔硬〕这次标了。"] }) });
   const good = await call("forge_confirm_outline", { title: BOOK, chapter: 5, volume: 1 });
   assert.equal(good.ok, true, JSON.stringify(good));
 });

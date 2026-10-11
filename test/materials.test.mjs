@@ -118,22 +118,53 @@ await t("任务包含十段的标题，缺的也占位不省略", async () => {
   assert.ok(task.includes("（缺）"), "缺的材料要有显式标记");
 });
 
-await t("任务包自包含：真源内容直接进正文区，不只是路径", async () => {
+// 下面两条原来断言的是「全内联、子代理不用读任何文件」。2026-10-11 按
+// oh-story 的投递形态改成「路径为主 + 关键行内联」之后，那两条断言与设计直接冲突，
+// 所以重写成新契约。**不是因为它们红了才改**——是设计变了，断言跟着变。
+// 新契约的三条各有出处，见 lib/materials.js 里 SEGMENT_PRIORITY 的注释。
+await t("任务包投递：短而要害的段全文内联，且每段都带真源路径", async () => {
   const pkg = await m.assembleMaterials(ws, BOOK, "ch0001");
   const task = m.buildDraftTask(pkg, { title: "雨夜", targetWords: 2800 });
-  assert.ok(task.includes("他必须在雨里对仇人说出那三个字"), "本章任务内容没进任务包");
-  assert.ok(task.includes("不要系统流"), "契约红线没进任务包");
-  assert.ok(task.includes("只在雨天能说话"), "人物设定没进任务包");
-  assert.ok(task.includes("听雨楼"), "场景设定没进任务包");
-  assert.ok(task.includes("断剑"), "伏笔台账没进任务包");
-  assert.ok(task.includes("短句"), "作者文风记忆没进任务包");
+  // 人物卡属于「短，且少一个名字就写错」——真机上正是在这里丢了主角姓名。
+  assert.ok(task.includes("只在雨天能说话"), "人物设定要全文内联");
   assert.ok(task.includes("约 2800 字"));
   assert.ok(task.includes("## 本章标题"));
+  // 每段都要给绝对路径：子代理没有工作区根，给相对路径等于没给。
+  assert.ok(task.includes("书仓目录："), "要给书仓绝对路径，否则子代理拼不出真源路径");
+  assert.match(task, /> 来源：.*\.md｜指纹 /, "每段都要带来源与指纹");
 });
 
-await t("任务包声明不需要任何额外上下文", async () => {
+await t("任务包投递：长材料只给关键行或只给路径，不给全文", async () => {
+  // 卷纲要真长才会走 path 模式。夹具里那份只有几十字，会被
+  // INLINE_FULL_BELOW 短路成全量内联——那条短路是**故意**的：
+  // 短内容摘行只会平白多一个漏内容的机会。所以这里得写一份真长的。
+  // 顺带钉住一个边界：短材料全量进包，长材料才转成路径。
+  const longPlan = "# 卷纲\n\n" + Array.from({ length: 60 }, (_, i) =>
+    `- 第 ${i + 1} 拍：沈昭在雨里退一步，把话咽回去，听对面把条件说完再决定要不要接。`).join("\n");
+  await writeInBook("大纲/卷01/卷纲.md", longPlan);
+
+  const pkg = await m.assembleMaterials(ws, BOOK, "ch0001");
+  const task = m.buildDraftTask(pkg);
+  // 契约是 keys 模式：**红线行必须在**——「不要系统流」这种无冒号的短横线列表
+  // 正是第一版摘关键行漏掉的那类，测试当场抓到过「契约红线缺失」。
+  assert.ok(task.includes("不要系统流"), "契约红线必须作为关键行进包");
+  // 卷纲是 path 模式：全文不内联，但要说清楚它有多少字、去哪儿读。
+  assert.ok(!task.includes("第 60 拍"), "长卷纲全文不该内联");
+  assert.match(task, /（这一段不内联。动笔前按上面的路径读全文。共 \d+ 字。）/);
+
+  // 短材料走全量内联，同样要能验证——否则上面那条短路没有任何测试看着。
+  await writeInBook("大纲/卷01/卷纲.md", "# 卷纲\n\n卷一目标：沈昭说出第一个字。\n");
+  const shortTask = m.buildDraftTask(await m.assembleMaterials(ws, BOOK, "ch0001"));
+  assert.ok(shortTask.includes("卷一目标：沈昭说出第一个字"), "短材料要全量内联");
+});
+
+await t("任务包如实说明要读哪些文件，不再声称不需要任何上下文", async () => {
   const task = m.buildDraftTask(await m.assembleMaterials(ws, BOOK, "ch0001"));
-  assert.ok(task.includes("不需要读任何其他文件"));
+  // 原来这里写的是「你不需要读任何其他文件」——而人物段当时只装进了一份角色卡。
+  // 子代理照这句话就不会去读盘，于是「主角叫什么」永远没人知道，
+  // 它也不会觉得自己缺东西。现在如实说：清单在这里，能读的就去读。
+  assert.ok(task.includes("标注「读全文」的，动笔前完整读到 EOF"));
+  assert.equal(task.includes("不需要读任何其他文件"), false, "不能再说不用读文件");
   assert.ok(task.includes("不要凭空发明关键设定"));
   assert.ok(task.includes("【存疑】"));
 });

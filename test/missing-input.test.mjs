@@ -23,6 +23,7 @@ import { fanoutTools } from "../lib/tools-fanout.js";
 import { chapterTools } from "../lib/tools-chapter.js";
 import { directorTools } from "../lib/tools-director.js";
 import { fakeExec } from "./helpers/fake-parent.mjs";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -168,7 +169,7 @@ for (const [artifact, body] of Object.entries({
   await call("forge_artifact_candidate", { title: BOOK, artifact, body });
   await call("forge_confirm_artifact", { title: BOOK, artifact });
 }
-await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "〔硬〕沈昭必须开口。\n" });
+await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: outlineFixture({ constraints: ["〔硬〕沈昭必须开口。"] }) });
 await call("forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 });
 await call("forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 });
 await call("forge_draft_task", { title: BOOK, chapter: 1, volume: 1, targetWords: 2000 });

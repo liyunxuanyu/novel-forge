@@ -17,6 +17,7 @@ import { chapterTools } from "../lib/tools-chapter.js";
 import { warehouseTools } from "../lib/tools-warehouse.js";
 import { fanoutTools } from "../lib/tools-fanout.js";
 import { MIN_LENGTH_RATIO, countWords, checkChapterLength } from "../lib/chapter-state.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -87,7 +88,7 @@ for (const [artifact, body] of Object.entries({
 }
 
 await t("目标字数确实被记进章节状态", async () => {
-  await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "〔硬〕沈昭必须开口。\n" });
+  await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: outlineFixture({ constraints: ["〔硬〕沈昭必须开口。"] }) });
   await call("forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 });
   await call("forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 });
   const r = await call("forge_draft_task", { title: BOOK, chapter: 1, chapterTitle: "雨夜", targetWords: 2000 });
@@ -139,7 +140,7 @@ await t("审读通过后定稿：足量正文照常入档", async () => {
 });
 
 await t("定稿空壳被拦：书仓里一个定稿文件都没多出来", async () => {
-  await call("forge_outline_draft", { title: BOOK, chapter: 2, volume: 1, body: "〔硬〕继续。\n" });
+  await call("forge_outline_draft", { title: BOOK, chapter: 2, volume: 1, body: outlineFixture({ constraints: ["〔硬〕沈昭必须开口。"] }) });
   await call("forge_confirm_outline", { title: BOOK, chapter: 2, volume: 1 });
   await call("forge_assemble_materials", { title: BOOK, chapter: 2, volume: 1 });
   await call("forge_draft_task", { title: BOOK, chapter: 2, volume: 1, targetWords: 2000 });
@@ -164,7 +165,7 @@ await t("allowShort 放行：短章、番外是合法体裁，不做陷阱", asy
 });
 
 await t("被拦之后改正文就能过：不是死路", async () => {
-  await call("forge_outline_draft", { title: BOOK, chapter: 3, volume: 1, body: "〔硬〕继续。\n" });
+  await call("forge_outline_draft", { title: BOOK, chapter: 3, volume: 1, body: outlineFixture({ constraints: ["〔硬〕沈昭必须开口。"] }) });
   await call("forge_confirm_outline", { title: BOOK, chapter: 3, volume: 1 });
   await call("forge_assemble_materials", { title: BOOK, chapter: 3, volume: 1 });
   await call("forge_draft_task", { title: BOOK, chapter: 3, volume: 1, targetWords: 2000 });

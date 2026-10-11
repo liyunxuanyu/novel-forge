@@ -26,6 +26,7 @@ import { gateTools } from "../lib/tools-gates.js";
 import { RULES } from "../lib/director.js";
 import * as wh from "../lib/warehouse.js";
 import * as cs from "../lib/chapter-state.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];

@@ -22,6 +22,7 @@ import { fanoutTools } from "../lib/tools-fanout.js";
 import { chapterTools } from "../lib/tools-chapter.js";
 import * as wh from "../lib/warehouse.js";
 import { fakeExec } from "./helpers/fake-parent.mjs";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -62,7 +63,7 @@ const engine = {
     let value;
     if (name.includes("outline")) {
       const n = /第 (\d+) 章/.exec(prompt)?.[1] ?? "?";
-      value = `# 第 ${n} 章 试炼\n\n〔硬〕沈昭在本章必须开口说出第一个字。\n〔软〕保留雨声。\n〔自由〕收尾自定。\n`;
+      value = outlineFixture({ title: `试炼${n}`, constraints: ["〔硬〕沈昭在本章必须开口说出第一个字。", "〔软〕保留雨声。", "〔自由〕收尾自定。"] });
     } else if (name.includes("review")) {
       reviewSeq += 1;
       value = reviewSeq % 2 === 1

@@ -18,6 +18,7 @@ import { gateTools } from "../lib/tools-gates.js";
 import { fanoutTools } from "../lib/tools-fanout.js";
 import { MAX_REVISION_ROUNDS } from "../lib/chapter-state.js";
 import { DEFAULT_POLICY } from "../lib/gates.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -88,7 +89,7 @@ await t("新节点在默认策略里是 stop", async () => {
 });
 
 await t("未派审读（起草中）不受上限影响", async () => {
-  await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "〔硬〕x\n" });
+  await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: outlineFixture({ constraints: ["〔硬〕沈昭必须开口。"] }) });
   await call("forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 });
   await call("forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 });
   await call("forge_import_draft", { title: BOOK, chapter: 1, body: "第一版。", origin: "AI 起草" });
@@ -152,7 +153,7 @@ await t("到顶不会卡死：作者放行后本章能定稿，导演继续往�
 await t("上限只对到顶的那一章生效，下一章从头自动改", async () => {
   const n = await next();
   assert.equal(n.node, "chapter.outline_confirm", JSON.stringify(n));
-  await call("forge_outline_draft", { title: BOOK, chapter: 2, volume: 1, body: "〔硬〕y\n" });
+  await call("forge_outline_draft", { title: BOOK, chapter: 2, volume: 1, body: outlineFixture({ constraints: ["〔硬〕沈昭必须开口。"] }) });
   await call("forge_confirm_outline", { title: BOOK, chapter: 2, volume: 1 });
   await call("forge_assemble_materials", { title: BOOK, chapter: 2, volume: 1 });
   await call("forge_import_draft", { title: BOOK, chapter: 2, body: "第二章初稿。", origin: "AI 起草" });

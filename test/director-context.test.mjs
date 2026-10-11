@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import * as wh from "../lib/warehouse.js";
 import { autoFillContext, givenOnly } from "../lib/director-context.js";
 import { buildTaskSpec } from "../lib/director.js";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];

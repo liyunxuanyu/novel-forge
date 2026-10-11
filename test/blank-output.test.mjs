@@ -18,6 +18,7 @@ import { chapterTools } from "../lib/tools-chapter.js";
 import { warehouseTools } from "../lib/tools-warehouse.js";
 import { fanoutTools } from "../lib/tools-fanout.js";
 import { fakeExec } from "./helpers/fake-parent.mjs";
+import { outlineFixture } from "./helpers/outline-fixture.mjs";
 
 let passed = 0;
 const failures = [];
@@ -137,7 +138,7 @@ await t("端到端：审读交白卷时，这一章不会被零发现项放行",
   );
   const call = (n, a) => map.get(n).execute(a ?? {}, fakeExec());
 
-  await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "〔硬〕沈昭必须开口。\n" });
+  await call("forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: outlineFixture({ constraints: ["〔硬〕沈昭必须开口。"] }) });
   await call("forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 });
   await call("forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 });
   await call("forge_import_draft", { title: BOOK, chapter: 1, body: "沈昭张口。", origin: "AI 起草" });
