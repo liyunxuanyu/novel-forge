@@ -226,6 +226,39 @@ await t("「风格基准」跨两个根：写法库在书仓、作者记忆在�
   assert.match(brief, /它没提到的地方，一律照上面的通用要求写/, "让位只限它说到的那一点");
 });
 
+await t("多人物段要收全——只挑一个会把主角的设定整个扔掉", () => {
+  // 实测后果：试跑那本书设定/人物/ 下有主角、舅妈两个文件，
+  // 而任务包里只装进了舅妈——**主角的姓名从来没到过写作者手上**。
+  // 起草子代理于是各自发明：一个叫「陈默」，两个干脆全程用「他」，
+  // 而任务包自己还写着「材料里没有提到的东西，不要凭空发明关键设定」。
+  //
+  // 根因是 resolveOne 按排序 .pop() 挑一个文件。「相关人物」这段的语义
+  // 本来就是多份，一章里有主角就有配角。
+  const pkg = {
+    book: "B", chapter: "ch0001",
+    segments: [{
+      id: "characters", name: "相关人物", kind: "truth", describe: "d",
+      multi: true,
+      resolve: () => [`设定/人物/*.md`],
+    }],
+  };
+  // 直接测 resolveAll 走的那条路：把两份人物文件放进真源式的目录再读。
+  const seg = m.SEGMENTS.find((s) => s.id === "characters");
+  assert.equal(seg.multi, true, "characters 段必须声明 multi，否则走的是只挑一个的分支");
+  assert.deepEqual(seg.resolve({ chapter: "ch0001", volume: 1, workspaceRoot: ".", book: "B" }),
+    ["设定/人物/*.md"], "通配路径没变");
+});
+
+await t("单文件通配段不能跟着一起收全——否则会把整本书塞进任务包", () => {
+  // 定稿/卷01/0001-*.md 要的是「最新一章」，不是「全部章节」。
+  // 所以 multi 必须逐段声明，不能在 resolveAll 里一刀切。
+  const prev = m.SEGMENTS.find((s) => s.id === "prevChapter");
+  assert.notEqual(prev.multi, true, "上一章结尾不是多文件段");
+  // 用第 2 章：第 1 章本来就没有上一章，resolve 会返回空数组，测不到通配。
+  const cands = prev.resolve({ chapter: "ch0002", volume: 1, workspaceRoot: ".", book: "B" });
+  assert.ok(cands.some((c) => String(c).includes("*")), "它仍然靠通配，只是走单文件解析");
+});
+
 await t("题材从契约段自动取——不能指望调用方记得传 genre", () => {
   // genre 一直是 buildDraftTask 的参数，而没有任何调用方传过它：
   // 「本书题材：…」那句在真实任务包里从来没出现过。
