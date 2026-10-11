@@ -582,6 +582,55 @@ await t("动作清单按段统计，不是按句", () => {
   assert.ok(m.actionListCount >= 1, "同段堆叠应当被报出来");
 });
 
+await t("虚词过稀要叠加「中长句不足」才判——否则会误抓长句多的合法稿", () => {
+  // 真源 check-ai-patterns.js:171 明写：「单纯低功能词会误抓有大量中长句的文本；
+  // 因此必须叠加『中长句不足』」。道理是一个长句本来就能塞下好几个结构位置，
+  // 长句多的稿子虚词密度低很正常。我原来单独判虚词密度，正好专抓这种合法形态。
+  //
+  // 这份构造稿：虚词 49.8/千字（远低于 85），但每句都在 30 字以上（中长句 100%）。
+  // 两个条件只有前一个成立，所以不该报——而同一份稿子确实报了别的项，
+  // 说明 proseFindings 跑过了，不是被 minCharsToJudge 挡掉的。
+  const LONG = [
+    "雨水顺着屋檐斜落进院子打湿石阶再顺着砖缝慢慢渗进泥土里面去再也看不见踪影",
+    "冷风从门缝里穿进来吹动挂在墙上的白布掀起一角随后又轻轻落回原处没有声响",
+    "录音机摆在供桌左边蒙尘很厚看样子已经很久没有人动过它连指纹都看不出来一个",
+    "他站在门口没有进去雨水顺着头发淌进脖子里凉得他缩起肩膀却仍旧没有抬脚进门",
+    "屋里点着一盏长明灯火苗被穿堂风压得歪向一边几乎要灭掉可是始终没有真的灭",
+    "舅妈背对着他擦供桌同一块地方反复擦了很多遍也没有停手抹布上全是深色水痕",
+    "磁带在机器里面卡住转了半圈随后又退回去一点点没有出声像是故意不肯往前走",
+    "他听见父亲声音从机器深处传出来很轻很闷像是隔着一层厚布听不真切字眼模糊",
+    "第二个声音压得很低像是在争什么事情听不清楚具体字眼只能听出火气很重很急",
+    "雨声忽然大起来盖住了后面所有动静持续了很久很久才小下去露出机器空转声响",
+    "长明灯的火苗又歪了一下这一回差一点点就要彻底灭掉幸好最后还是自己立住了",
+    "他伸手想去关机器手指碰到塑料外壳又缩回来没有按下去像是怕听见后面的话",
+    "舅妈转过身来看他手里攥着抹布指节发白像是攥了很久很久始终没有松开过一下",
+    "院子里积水映着门口那盏灯晃成一片碎光看不出人的影子也看不出雨什么时候停",
+    "供桌上的香烧到一半香灰弯下来迟迟没有掉在桌面上悬在那里像是也不肯走",
+    "他低头看自己鞋面上沾的泥已经干成一层灰白色的硬壳抠下来一小片碎在手里",
+    "门外传来收废品三轮车经过水洼的声音由远及近又由近及远最后完全听不见",
+    "墙角堆着几个纸箱子被雨水泡软塌下去一角露出里面用报纸裹着的旧东西",
+  ].map((s) => s + "。").join("\n\n");
+  const m = measureProse(LONG);
+  assert.ok(m.chars > BASELINE.minCharsToJudge, "这份构造稿要长到能过判决门槛");
+  assert.ok(m.funcDensity < BASELINE.funcDensity.floor, `虚词 ${m.funcDensity.toFixed(1)} 要低于下限`);
+  assert.ok(m.longSentenceRatio >= BASELINE.longSentence.ratioFloor, "中长句要够多");
+  const ids = proseFindings(m).map((f) => f.id);
+  assert.ok(ids.length > 0, "这份稿子要报出别的项，才能证明 proseFindings 真的跑过");
+  assert.equal(ids.includes("sparse-function-words"), false, "长句够多时不该报虚词过稀");
+});
+
+await t("中长句也不足时，虚词过稀才报", () => {
+  const m = measureProse(TELEGRAPH);
+  assert.ok(m.longSentenceRatio < BASELINE.longSentence.ratioFloor, "TELEGRAPH 的中长句要不足");
+  const ids = proseFindings(m).map((f) => f.id);
+  assert.ok(ids.includes("sparse-function-words") || ids.includes("telegram"),
+    `两个条件都满足时要报出来，实际报的是：${ids.join(", ") || "（无）"}`);
+});
+
+await t("体检表要打出中长句占比，否则审读者看不见这个必要条件", () => {
+  assert.match(renderProseMetrics(measureProse(CALIBRATED)), /中长句占比 \d+\.\d%/);
+});
+
 // ── 汇总 ──
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {
