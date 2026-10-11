@@ -141,15 +141,22 @@ await t("审读步骤把维度列全，并要求逐字引文", async () => {
 await cs.advance(ws, BOOK, "ch0001", 1, "dispatch_review");
 await cs.recordFindings(ws, BOOK, "ch0001", 1, { covered: ["人物"], findings: [{ quote: "举火把的人", note: "没交代是谁" }] });
 
-await t("改稿步骤把发现项逐条列出来", async () => {
+await t("改稿步骤把发现项逐条列出来，并带上细纲里的〔硬〕约束", async () => {
   const r = await call("forge_director_plan", {
     title: BOOK,
-    context: { draftText: "旧稿", findings: [{ quote: "举火把的人", note: "没交代是谁", dimension: "情节与因果", severity: "s2" }] },
+    context: {
+      draftText: "旧稿",
+      findings: [{ quote: "举火把的人", note: "没交代是谁", dimension: "情节与因果", severity: "s2" }],
+      outlineBrief: "〔硬〕不写他在数什么。",
+    },
   });
   assert.equal(r.role, "改稿子代理");
   assert.ok(r.prompt.includes("举火把的人"));
   assert.ok(r.prompt.includes("没交代是谁"));
   assert.ok(r.prompt.includes("整篇正文"), "改稿必须交整稿不是 diff");
+  // 改稿者必须看得到〔硬〕，并且被告知〔硬〕优先于发现项。
+  assert.ok(r.prompt.includes("〔硬〕不写他在数什么。"), "细纲必须进 prompt，否则改稿者没有否决发现项的依据");
+  assert.ok(r.prompt.includes("细纲里的〔硬〕约束优先于发现项"), "必须明说〔硬〕优先，不能只把细纲摆在旁边");
 });
 
 await cs.advance(ws, BOOK, "ch0001", 1, "import_draft");

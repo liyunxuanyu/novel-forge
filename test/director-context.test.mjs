@@ -237,6 +237,35 @@ await t("施工单真的自包含了：细纲 prompt 里嵌着卷纲、契约、
   assert.doesNotMatch(spec.prompt, /调用方未提供/, "还有段落没取到");
 });
 
+// ── 细纲只给该给的人 ────────────────────────────────────────────────────
+// 起草细纲的人不该先拿到细纲（那是他该提的方案）；改稿的人必须拿到，
+// 否则发现项说要改、细纲说不能改，他手里没有能对照的那一半。
+await t("改稿步骤自己取到本章细纲，并把它嵌进 prompt", async () => {
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "revise", chapter: 1 }), {
+    draftText: "旧稿", findings: [{ quote: "x", note: "y" }],
+  });
+  assert.ok(typeof ctx.outlineBrief === "string" && ctx.outlineBrief.trim() !== "",
+    "改稿步骤没取到细纲——它就只能照办发现项，撞了〔硬〕也不知道");
+  const spec = buildTaskSpec(act({ step: "revise", chapter: 1 }), ctx);
+  assert.equal(spec.ok, true);
+  assert.match(spec.prompt, /本章细纲（含〔硬〕约束）/);
+  assert.ok(spec.prompt.includes(ctx.outlineBrief), "细纲正文必须整段进 prompt");
+  assert.doesNotMatch(spec.prompt, /调用方未提供细纲/);
+});
+
+await t("细纲起草步骤仍然拿不到细纲：那是他该提的方案", async () => {
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "outline" }), {});
+  assert.equal(ctx.outlineBrief, undefined,
+    "把细纲喂给起草细纲的人，等于替他先把本章目标定好");
+});
+
+await t("调用方明确给过细纲时不覆盖", async () => {
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "revise" }), {
+    draftText: "旧稿", findings: [{ quote: "x", note: "y" }], outlineBrief: "我自己写的目标",
+  });
+  assert.equal(ctx.outlineBrief, "我自己写的目标");
+});
+
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length) {
   for (const f of failures) console.log(`\n--- ${f.name} ---\n${f.error?.stack ?? f.error}`);

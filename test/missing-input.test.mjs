@@ -83,7 +83,9 @@ await t("四类步骤各自声明了必需输入", async () => {
   assert.deepEqual(STEP_SPECS.outline.requires, ["volumePlan", "contract"]);
   assert.deepEqual(STEP_SPECS.draft.requires, ["taskText"]);
   assert.deepEqual(STEP_SPECS.review.requires, ["draftText"]);
-  assert.deepEqual(STEP_SPECS.revise.requires, ["draftText", "findings"]);
+  // 改稿必须拿到细纲：〔硬〕约束是它判断「这条发现项能不能照办」的唯一依据。
+  // 少了这一项，它会照办一条会违反〔硬〕的改法，改完又出新问题。
+  assert.deepEqual(STEP_SPECS.revise.requires, ["draftText", "findings", "outlineBrief"]);
 });
 
 await t("纯工具步骤不声明输入：materials / settle 缺啥都放行", async () => {
@@ -142,7 +144,7 @@ await t("只有空格的字符串算缺，不是漏", async () => {
 await t("缺好几个时一次全点名，不挤牙膏", async () => {
   const r = buildTaskSpec({ ...ACT, step: "revise" }, {});
   assert.equal(r.ok, false);
-  assert.match(r.detail, /draftText、findings/);
+  assert.match(r.detail, /draftText、findings、outlineBrief/);
 });
 
 await t("本章目标仍可省：细纲起草者是提方案的人，不该替它把活先干了", async () => {
