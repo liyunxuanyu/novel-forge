@@ -168,6 +168,41 @@ await t("过期的发现项不许进改稿——那是上一轮对着旧稿写�
   assert.equal(spec.stage, "missing-input");
 });
 
+await t("作者的闸门答复会随施工单发给子代理——审读也要", async () => {
+  // 答复不到位，子代理就只能自己挑：真机上第 1 章 v10 挑中的正是作者否掉的
+  // 那一支，于是 d0007 连着两版原样留着，而它以为自己办完了。
+  //
+  // 审读那一路同样要给：否则作者已经判过的问题会被一轮轮重报
+  // （对话占比已经有两轮独立判过「不算问题」）。
+  await writeDraftArea("ch0001/状态.json", JSON.stringify({
+    schema: 1, chapter: "ch0001", volume: 1, stage: "待改",
+    draft: { version: 1, latest: "稿件/v1.md" },
+    gateDecisions: [
+      { node: "chapter.blocked", choice: "按发现项改掉再定稿", note: "删掉「靠前两个字先没了」", at: "2026-01-01T00:00:00.000Z" },
+      { node: "chapter.revise_exhausted", choice: "再改一轮并放宽标准", note: "前 8 轮是被人为矛盾卡住的", at: "2026-01-01T00:01:00.000Z" },
+    ],
+  }));
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "review" }), {});
+  assert.equal(ctx.gateDecisions.length, 2, "答复必须全部给，不能只给最近一个");
+  assert.equal(ctx.gateDecisions[0].node, "chapter.blocked", "最早那条正是要照办的那条");
+  const spec = buildTaskSpec(act({ step: "review" }), ctx);
+  assert.equal(spec.ok, true, spec.detail);
+  assert.match(spec.prompt, /作者已经拍板的处置/);
+  assert.match(spec.prompt, /删掉「靠前两个字先没了」/, "作者的理由与具体做法要一起给，只给选项名执行不了");
+  assert.match(spec.prompt, /优先于发现项里的任何并列选项/);
+});
+
+await t("只有单数 gateDecision 的老状态也读得到", async () => {
+  await writeDraftArea("ch0001/状态.json", JSON.stringify({
+    schema: 1, chapter: "ch0001", volume: 1, stage: "待改",
+    draft: { version: 1, latest: "稿件/v1.md" },
+    gateDecision: { node: "chapter.revise_exhausted", choice: "带现状定稿入档", at: "2026-01-01T00:00:00.000Z" },
+  }));
+  const ctx = await autoFillContext(ws, BOOK, act({ step: "review" }), {});
+  assert.equal(ctx.gateDecisions.length, 1);
+  assert.equal(ctx.gateDecisions[0].choice, "带现状定稿入档");
+});
+
 await t("状态里没有发现项时，改稿步骤如实失败，不拿空数组硬跑", async () => {
   await writeDraftArea("ch0001/状态.json", JSON.stringify({
     schema: 1, chapter: "ch0001", volume: 1, stage: "待改", draft: { version: 1, latest: "稿件/v1.md" },
