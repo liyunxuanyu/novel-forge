@@ -181,6 +181,87 @@ await t("第一章没有上一章：如实报缺，不硬凑一个文件", async
   assert.equal(pkg.missing.includes("prevChapter"), true);
 });
 
+await t("写法库与作者记忆都空时，如实报缺，不注入一句废话占位", async () => {
+  // 第 1 章必然走到这里：新书没有写法条目，也没有作者记忆。
+  // renderStyleBrief 单独用会返回「这本书还没有沉淀写法条目。照常写，不要凭想象替作者定文风。」
+  // ——那是个死胡同：它占着「风格基准」的位置，实际什么都没说，
+  // 而且会让 buildDraftTask 以为这一段是齐的。
+  await fs.rm(path.join(bookBase, "设定", "写法"), { recursive: true, force: true });
+  await fs.rm(path.join(ws, "书房", "作者记忆"), { recursive: true, force: true });
+
+  const pkg = await m.assembleMaterials(ws, BOOK, "ch0006", { volume: 1 });
+  const style = pkg.segments.find((s) => s.id === "style");
+  assert.equal(style.ok, false);
+  assert.ok(pkg.missing.includes("style"));
+});
+
+await t("「风格基准」跨两个根：写法库在书仓、作者记忆在书房，两边都要进包", async () => {
+  // 这一段从前整段按 kind:"memory" 吃工作区根，于是「设定/写法」被解析成
+  // <工作区>/设定/写法 —— 这个目录从来不存在，而失败毫无声响：
+  // 只要作者记忆还在，这一段就报「已备齐」，本书写法一条都进不了起草任务包。
+  // 原来的测试只断言过「书房/作者记忆」这一半，所以一直没发现另一半是死的。
+  await writeInBook("设定/写法/句式-短句收尾.md", [
+    "# 句式｜短句收尾",
+    "",
+    "**写法**：段末落在短句上，不用逗号拖长。",
+    "**为什么本书这么写**：让停顿落在动作之后。",
+    "**出处**：第 1 章第 12 行",
+  ].join("\n"));
+
+  // 上一条测试清掉了作者记忆，这里建回来——两边同时在，才能验证它们不会互相顶掉。
+  const memDir = path.join(ws, "书房", "作者记忆");
+  await fs.mkdir(memDir, { recursive: true });
+  await fs.writeFile(path.join(memDir, "口吻.md"), "叙述者不解释，也不替读者下判断。\n", "utf8");
+
+  const pkg = await m.assembleMaterials(ws, BOOK, "ch0005", { volume: 1 });
+  const style = pkg.segments.find((s) => s.id === "style");
+  assert.equal(style.ok, true);
+  assert.match(style.source, /书仓\/雨夜剑客\/设定\/写法/, "写法库的出处必须在书仓里");
+  assert.match(style.source, /书房\/作者记忆\//, "作者记忆的出处也要在——两边不能互相顶掉");
+
+  const brief = m.buildDraftTask(pkg, { title: BOOK, genre: "玄幻" });
+  assert.match(brief, /段末落在短句上/, "本书写法条目必须进起草任务包");
+  assert.match(brief, /本书写法（已沉淀/, "要按写法简报渲染，不是裸贴文件");
+  assert.match(brief, /它压过上面任何一条通用要求/, "写法条目出现时，通用要求要让位");
+  assert.match(brief, /它没提到的地方，一律照上面的通用要求写/, "让位只限它说到的那一点");
+});
+
+await t("题材从契约段自动取——不能指望调用方记得传 genre", () => {
+  // genre 一直是 buildDraftTask 的参数，而没有任何调用方传过它：
+  // 「本书题材：…」那句在真实任务包里从来没出现过。
+  const heading = m.genreFromContract(
+    "# 作品契约\n\n## 明确不要什么\n\n不要系统流。\n\n## 题材与目标读者\n\n都市悬疑，25-35 岁网文读者。\n\n## 核心看点与差异化\n\nx\n",
+  );
+  assert.equal(heading, "都市悬疑，25-35 岁网文读者。", "真源格式是二级标题加一段");
+
+  const inline = m.genreFromContract("题材与目标读者：都市悬疑，25-35 岁网文读者。\n核心看点：x");
+  assert.equal(inline, "都市悬疑，25-35 岁网文读者。", "手写契约是「键：值」一行");
+
+  assert.equal(m.genreFromContract("## 题材与目标读者\n\n留白\n"), "", "留白不算题材");
+  assert.equal(m.genreFromContract(""), "");
+  assert.equal(m.genreFromContract(undefined), "");
+});
+
+const contractPkg = (contractBody) => ({
+  book: "B", chapter: "ch0001",
+  segments: [
+    { id: "task", name: "本章任务", describe: "d", ok: true, content: "x", source: "s", hash: "h" },
+    { id: "contract", name: "契约", describe: "d", ok: true, content: contractBody, source: "s", hash: "h2" },
+  ],
+});
+
+await t("契约里有题材时，任务包真的把它写进去了", () => {
+  const task = m.buildDraftTask(contractPkg("## 题材与目标读者\n\n都市悬疑，25-35 岁网文读者。\n"), {});
+  assert.match(task, /本书题材：都市悬疑，25-35 岁网文读者。/);
+  assert.match(task, /题材的语汇要一致，不要串味/);
+});
+
+await t("调用方显式给的题材优先于契约", () => {
+  const task = m.buildDraftTask(contractPkg("## 题材与目标读者\n\n都市悬疑。\n"), { genre: "武侠" });
+  assert.match(task, /本书题材：武侠。/);
+  assert.ok(!/本书题材：都市悬疑/.test(task));
+});
+
 await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
 await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
 

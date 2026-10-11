@@ -395,6 +395,11 @@ const scenarios = [
   ["forge_outline_draft", { title: BOOK, chapter: 1, volume: 1, body: "第一章细纲。\n\n〔硬〕主角必须在卷末写下第一个自己不想写的名字。\n〔软〕尽量少用对白，用动作交代关系。\n〔自由〕配角的姓名与外貌可自由发挥。\n" }],
   ["forge_confirm_outline", { title: BOOK, chapter: 1, volume: 1 }],
   ["forge_assemble_materials", { title: BOOK, chapter: 1, volume: 1 }],
+  // 生成起草任务包必须排在导演派稿**之前**。导演跑起草那一步会自动落稿，
+  // 章节随即到「待审」，而 build_draft_task 只允许从 已备料/起草中 出发。
+  // 这条以前排在后面也「成功」过——因为 forge_draft_task 不检查状态迁移的返回值，
+  // 转换被拒了照样报 ok:true。工具改成如实回报之后，顺序问题才现形。
+  ["forge_draft_task", { title: BOOK, chapter: 1, volume: 1 }],
   // 这里才是自动导演**真正该派子代理**的那一刻：细纲已确认、材料已备齐，
   // 下一步 chapter.draft 是 auto 级且需要模型 —— nextAction 会 proceed，
   // 派发成功分支（带 stopReason、带 done/failed）只有走到这里才校验得到。
@@ -403,7 +408,6 @@ const scenarios = [
   // 于是 nextAction 落在同样 auto 的 outline 步上，碰巧派了一次。
   // 把细纲修对之后，那个「碰巧」就消失了 —— 说明它从来不是被设计出来的覆盖。
   ["forge_director_run", { title: BOOK }],
-  ["forge_draft_task", { title: BOOK, chapter: 1, volume: 1 }],
   ["forge_import_draft", { title: BOOK, chapter: 1, volume: 1, body: "正文草稿。" }],
   ["forge_dispatch_review", { title: BOOK, chapter: 1 }],
   // 闸门答复的成功路径：到这里第 1 章已经有流程记录了（上面那次 import 建的）。
