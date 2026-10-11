@@ -138,6 +138,24 @@ await t("审读步骤把维度列全，并要求逐字引文", async () => {
   assert.ok(r.prompt.includes("不要为了凑数编问题"));
 });
 
+await t("审读步骤自己就能拿到细纲——不靠调用方记得手喂", async () => {
+  // 这条钉的是一个「链路依赖调用方记性」的洞。细纲原先只按 requires 派发，
+  // 而审读的 requires 只有 draftText，于是审读者拿不到细纲，「设定一致性」
+  // 这个维度只能靠直觉。真机上我是手动把它塞进 context 的——换个会话重跑
+  // 就没人塞了。而第 1 章两轮报出来的 s2 全是**跨章**设计破坏
+  // （袋子动线自相矛盾、第 14 章要回收的限定词被抹掉），
+  // 那正是只有拿着细纲才看得见的那类问题。
+  await writeInBook("大纲/卷01/ch0001-细纲.md", "〔硬〕不出现「遗言」这个词。\n限定词是「晚上」，第 14 章才回收。\n");
+  const r = await call("forge_director_plan", { title: BOOK, context: { draftText: "雨下到第四日。" } });
+  assert.equal(r.role, "审读子代理");
+  assert.ok(r.prompt.includes("本章细纲"), "审读 prompt 必须有细纲这一段");
+  assert.ok(r.prompt.includes("第 14 章才回收"), "细纲正文要真的进 prompt，而不是只有个标题");
+  // 用途也要写死，否则审读会退化成逐条打勾的合规检查表——
+  // 那只看得见「写没写到」，看不见「写出来的东西是不是还成立」。
+  assert.ok(r.prompt.includes("别拿它当逐条打勾的清单"));
+  assert.ok(r.prompt.includes("后面还要用的东西"));
+});
+
 await cs.advance(ws, BOOK, "ch0001", 1, "dispatch_review");
 await cs.recordFindings(ws, BOOK, "ch0001", 1, { covered: ["人物"], findings: [{ quote: "举火把的人", note: "没交代是谁" }] });
 
