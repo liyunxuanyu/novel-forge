@@ -268,6 +268,15 @@ await t("改稿者留下的〔未处置〕说明被摘出来，不进正文，�
   assert.doesNotMatch(onDisk, /〔未处置〕/);
 });
 
+await t("liftUnresolved：换一个标记（〔说明〕）也照样摘走", () => {
+  // 真机上第二次翻车就是这个：prompt 里写〔未处置〕，子代理回的是〔说明〕，
+  // 只认一个标记等于把「模型会不会照着我给的词写」当成了正确性前提。
+  const alt = "正文一。\n正文二。\n〔说明〕发现项 10 不阻断，留待作者表态。\n";
+  const r = liftUnresolved(alt);
+  assert.deepEqual(r.notes, ["发现项 10 不阻断，留待作者表态。"]);
+  assert.equal(r.body, "正文一。\n正文二。");
+});
+
 await t("liftUnresolved：正文中间的〔未处置〕不误删，摘干净了也不交空正文", () => {
   const mid = "他说：「〔未处置〕这四个字我见过。」\n后面还有正文。\n";
   assert.equal(liftUnresolved(mid).body, mid, "中间出现的多半是对话或引文，不能删");
