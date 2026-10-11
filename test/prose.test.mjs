@@ -277,10 +277,26 @@ await t("本书自己的写法条目存在时：只在它说到的那一点上�
 
 await t("句子长度必须有正反对照实例，不能只有形容词", () => {
   const spec = renderProseSpec({});
-  assert.ok(spec.includes("反面（逗号长句只占三成"), "缺少写坏的样子");
-  assert.ok(spec.includes("正面（逗号长句占七成半"), "缺少写对的样子");
+  assert.ok(spec.includes("反面（把句子切碎"), "缺少写坏的样子");
+  assert.ok(spec.includes("正面（动作接成一条线）"), "缺少写对的样子");
   assert.ok(spec.includes("他抬手。开门。进屋。坐下。"), "反面例子要具体");
   assert.ok(spec.includes("他抬手把门推开，进屋先站在门口听了一下雨"), "正面例子要具体");
+});
+
+await t("写作者的指令里不塞检测器阈值——数字只给审读者看", () => {
+  // 三个参考项目在这一点上一致：oh-story 写「不自测字数句长」，
+  // B14-3 讲「而非把 0.85 直接扔给模型」。数字是检测器的语言，不是写作的语言。
+  //
+  // 我原来两组都给了，于是写作者去凑数：B 组把「逗号长句」写到 66.7% 达标，
+  // 虚词却纹丝不动（71.7）——它把句号换成逗号去够比例，没有真的把动作接起来。
+  const spec = renderProseSpec({});
+  for (const leak of ["每千字低于 85", "低于 85 个", "七成以上", "20–30 字", "8–12 字"]) {
+    assert.ok(!spec.includes(leak), `写作纪律里不该出现检测器阈值「${leak}」`);
+  }
+  // 但审读者那一侧必须给数字，否则没法表态。
+  const metrics = renderProseMetrics(measureProse(TELEGRAPH));
+  assert.match(metrics, /虚词密度 \d+\.\d\/千字/);
+  assert.match(metrics, /逗号长句占比/);
 });
 
 await t("起草任务包（导演链的正文来源）里必须有写作纪律", () => {
