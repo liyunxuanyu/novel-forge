@@ -337,14 +337,20 @@ await t("审读步骤拿得到正文体检，而且明确说这只是候选", ()
   assert.ok(p.includes("已核对，不算问题"), "要给审读者留出「看过了，不算问题」的出口");
 });
 
-await t("改稿步骤同时拿到写作纪律和上一稿的体检数字，且带上反投机规则", () => {
+await t("改稿步骤同时拿到写作纪律、体检数字与「本轮的结构活」", () => {
   const p = STEP_SPECS.revise.build(
     { book: "B", chapter: 1 },
     { draftText: TELEGRAPH, findings: [{ note: "n", quote: "q" }], outlineBrief: "o" },
   ).prompt;
   assert.ok(p.includes("写作纪律"));
   assert.ok(p.includes("上一稿的体检结果"));
-  assert.ok(p.includes("不要把正常的长句拆成短句串"));
+  // 这一条原来断言「不要把正常的长句拆成短句串」，那是旧措辞
+  // （「改稿时*顺手*把落在基线外的项拉回来」后面跟着的两条禁令之一）。
+  // 2026-10-11 换成分档的结构活：差得远的当本轮主任务，噪声内的不许动。
+  // 起因是真机上连改 8 轮、发现项 16→3，而句子形状分毫未动。
+  assert.ok(p.includes("本轮的结构活"), "结构活要作为独立一节进 prompt");
+  assert.ok(p.includes("别用作弊的方式凑数"), "反作弊边界不能丢");
+  assert.ok(p.includes("不要把本来该短的地方拉长"), "该短就短这条要留");
   assert.ok(p.includes("改表达、不改事实"));
   assert.ok(p.includes("不是唯一目标"), "改稿输出要求必须挡住「为凑指标注水」");
 });
