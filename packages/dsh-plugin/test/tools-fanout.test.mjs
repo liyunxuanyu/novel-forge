@@ -25,7 +25,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `ftool-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox", `ftool-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const BOOK = "雨夜剑客";
 
@@ -221,8 +221,8 @@ await t("非法书名被拒", async () => {
   assert.equal(r.stage, "validate-title");
 });
 
-await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
-await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
+await fs.rm(path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox"), { recursive: true, force: true });
+await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox")), false));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {

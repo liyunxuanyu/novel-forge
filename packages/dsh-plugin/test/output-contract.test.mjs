@@ -45,7 +45,7 @@ const relax = (def) => {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, "..");
-const sandboxRoot = path.join(projectRoot, "..", ".forge-test-sandbox");
+const sandboxRoot = path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox");
 await fs.promises.rm(sandboxRoot, { recursive: true, force: true }).catch(() => {});
 
 fs.mkdirSync(sandboxRoot, { recursive: true });

@@ -40,7 +40,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sandboxParent = path.join(projectRoot, "..", ".forge-test-sandbox");
+const sandboxParent = path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox");
 await fs.mkdir(sandboxParent, { recursive: true });
 const ws = path.join(sandboxParent, `in-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });

@@ -24,7 +24,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `gate-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox", `gate-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const BOOK = "雨夜剑客";
 
@@ -366,8 +366,8 @@ await t("blockingFindings 不带章号时列全书的未处置项", async () => 
   await g.dispositionBlocking(ws, BOOK, "ch0030", "判定不算问题并记录理由", "测试用：已确认不是问题");
 });
 
-await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
-await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
+await fs.rm(path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox"), { recursive: true, force: true });
+await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox")), false));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {

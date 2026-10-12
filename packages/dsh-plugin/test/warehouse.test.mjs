@@ -28,7 +28,7 @@ async function t(name, fn) {
 // 沙盒放项目目录下，不用 %TEMP%。本机 %TEMP% 落在用户家目录内，
 // 而 C:\Users\<user> 本身就是一个空的 Git 仓库 —— 用 %TEMP% 会把测试写进真实环境。
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sandbox = path.join(projectRoot, "..", ".forge-test-sandbox", `wf-${randomBytes(4).toString("hex")}`);
+const sandbox = path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox", `wf-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(sandbox, { recursive: true });
 console.log(`阶段二 · 书仓协议测试\n沙盒: ${sandbox}\n`);
 
@@ -228,7 +228,7 @@ await t("断连恢复：新建实例查询同一书仓结果一致", async () =>
 
 // ── 嵌套仓库防护 ─────────────────────────────────────────────────────────
 await t("工作区嵌在别的仓库里时被拒绝，不把提交写进别人历史", async () => {
-  const outer = path.join(projectRoot, "..", ".forge-test-sandbox", `outer-${randomBytes(3).toString("hex")}`);
+  const outer = path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox", `outer-${randomBytes(3).toString("hex")}`);
   await fs.mkdir(outer, { recursive: true });
   await wh.git(["init", "-q"], outer);
   const inner = path.join(outer, "内层书仓");
@@ -242,8 +242,8 @@ await t("工作区嵌在别的仓库里时被拒绝，不把提交写进别人�
 
 // ── 收尾 ─────────────────────────────────────────────────────────────────
 await fs.rm(sandbox, { recursive: true, force: true });
-await fs.rm(path.join(projectRoot, "..", ".forge-test-sandbox"), { recursive: true, force: true });
-await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", ".forge-test-sandbox")), false));
+await fs.rm(path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox"), { recursive: true, force: true });
+await t("沙盒已清理", () => assert.equal(existsSync(path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox")), false));
 
 console.log(`\n通过 ${passed}，失败 ${failures.length}`);
 if (failures.length > 0) {

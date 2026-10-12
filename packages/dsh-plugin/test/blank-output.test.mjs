@@ -35,7 +35,7 @@ async function t(name, fn) {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(projectRoot, "..", ".forge-test-sandbox", `blank-${randomBytes(4).toString("hex")}`);
+const ws = path.join(projectRoot, "..", "..", "..", ".forge-test-sandbox", `blank-${randomBytes(4).toString("hex")}`);
 await fs.mkdir(ws, { recursive: true });
 const logger = { info() {}, warn() {}, error() {} };
 
