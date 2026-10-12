@@ -182,8 +182,13 @@
       "quote": "q20",
       "note": "第二十章的问题",
       "createdAt": "2026-10-12T15:11:18.918Z",
-      "status": "未处置",
-      "waiver": null
+      "status": "未处理",
+      "waiver": null,
+      "disposition": {
+        "choice": "按发现项改掉再定稿",
+        "reason": null,
+        "at": "2026-10-12T15:11:19.698Z"
+      }
     },
     {
       "id": "d0014",
