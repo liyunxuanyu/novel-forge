@@ -22,6 +22,17 @@
       "createdAt": "2026-10-12T15:11:09.590Z",
       "status": "未处置",
       "waiver": null
+    },
+    {
+      "id": "d0003",
+      "chapter": "ch0001",
+      "severity": "s3",
+      "dimension": "信息密度",
+      "quote": "他站在窗前",
+      "note": "连续三段都在描述同一件事",
+      "createdAt": "2026-10-12T15:11:09.993Z",
+      "status": "未处理",
+      "waiver": null
     }
   ]
 }
