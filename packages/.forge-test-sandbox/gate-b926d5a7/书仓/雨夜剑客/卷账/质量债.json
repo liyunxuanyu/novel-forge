@@ -66,8 +66,11 @@
       "quote": "重复的引文",
       "note": "重复的说明",
       "createdAt": "2026-10-12T15:11:10.905Z",
-      "status": "未处置",
-      "waiver": null,
+      "status": "已豁免",
+      "waiver": {
+        "reason": "已确认可接受",
+        "at": "2026-10-12T15:11:14.622Z"
+      },
       "disposition": null
     },
     {
