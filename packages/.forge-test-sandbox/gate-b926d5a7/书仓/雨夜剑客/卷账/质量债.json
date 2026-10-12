@@ -11,6 +11,17 @@
       "createdAt": "2026-10-12T15:11:09.200Z",
       "status": "未处置",
       "waiver": null
+    },
+    {
+      "id": "d0002",
+      "chapter": "ch0001",
+      "severity": "s2",
+      "dimension": null,
+      "quote": "s2 的引文",
+      "note": "与第三章已定稿矛盾",
+      "createdAt": "2026-10-12T15:11:09.590Z",
+      "status": "未处置",
+      "waiver": null
     }
   ]
 }
