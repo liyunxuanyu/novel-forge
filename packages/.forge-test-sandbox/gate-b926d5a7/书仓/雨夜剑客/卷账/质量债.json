@@ -151,8 +151,13 @@
       "quote": "q9",
       "note": "未处置的阻断项",
       "createdAt": "2026-10-12T15:11:17.366Z",
-      "status": "未处置",
-      "waiver": null
+      "status": "未处理",
+      "waiver": null,
+      "disposition": {
+        "choice": "按发现项改掉再定稿",
+        "reason": null,
+        "at": "2026-10-12T15:11:17.761Z"
+      }
     }
   ]
 }
