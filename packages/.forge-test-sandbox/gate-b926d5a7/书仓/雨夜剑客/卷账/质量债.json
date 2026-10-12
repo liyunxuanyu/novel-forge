@@ -142,6 +142,17 @@
       "createdAt": "2026-10-12T15:11:16.586Z",
       "status": "未处理",
       "waiver": null
+    },
+    {
+      "id": "d0011",
+      "chapter": "ch0009",
+      "severity": "s2",
+      "dimension": null,
+      "quote": "q9",
+      "note": "未处置的阻断项",
+      "createdAt": "2026-10-12T15:11:17.366Z",
+      "status": "未处置",
+      "waiver": null
     }
   ]
 }
