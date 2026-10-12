@@ -56,6 +56,17 @@
       "status": "未处置",
       "waiver": null,
       "disposition": null
+    },
+    {
+      "id": "d0006",
+      "chapter": "ch0006",
+      "severity": "s2",
+      "dimension": null,
+      "quote": "要记录的引文",
+      "note": "要记录的说明",
+      "createdAt": "2026-10-12T15:11:11.721Z",
+      "status": "未处置",
+      "waiver": null
     }
   ]
 }
