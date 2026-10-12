@@ -173,6 +173,17 @@
         "at": "2026-10-12T15:11:18.535Z",
         "via": "chapter.blocked"
       }
+    },
+    {
+      "id": "d0013",
+      "chapter": "ch0020",
+      "severity": "s1",
+      "dimension": null,
+      "quote": "q20",
+      "note": "第二十章的问题",
+      "createdAt": "2026-10-12T15:11:18.918Z",
+      "status": "未处置",
+      "waiver": null
     }
   ]
 }
