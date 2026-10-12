@@ -114,8 +114,12 @@
       "quote": "a",
       "note": "s3 一条",
       "createdAt": "2026-10-12T15:11:15.795Z",
-      "status": "未处理",
-      "waiver": null
+      "status": "已处理",
+      "waiver": null,
+      "resolution": {
+        "how": "改掉了",
+        "at": "2026-10-12T15:11:16.972Z"
+      }
     },
     {
       "id": "d0009",
