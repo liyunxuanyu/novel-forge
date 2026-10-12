@@ -127,6 +127,17 @@
       "createdAt": "2026-10-12T15:11:16.198Z",
       "status": "未处理",
       "waiver": null
+    },
+    {
+      "id": "d0010",
+      "chapter": "ch0004",
+      "severity": "s4",
+      "dimension": null,
+      "quote": "c",
+      "note": "s4 再一条",
+      "createdAt": "2026-10-12T15:11:16.586Z",
+      "status": "未处理",
+      "waiver": null
     }
   ]
 }
