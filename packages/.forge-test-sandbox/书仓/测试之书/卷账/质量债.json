@@ -9,8 +9,12 @@
       "quote": "他忽然意识到。",
       "note": "AI 味：突兀转折。",
       "createdAt": "2026-10-12T15:11:27.066Z",
-      "status": "未处理",
-      "waiver": null
+      "status": "已处理",
+      "waiver": null,
+      "resolution": {
+        "how": "已按审读意见改掉。",
+        "at": "2026-10-12T15:11:31.092Z"
+      }
     },
     {
       "id": "d0002",
