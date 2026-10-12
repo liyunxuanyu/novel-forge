@@ -44,6 +44,17 @@
       "createdAt": "2026-10-12T15:11:10.513Z",
       "status": "未处理",
       "waiver": null
+    },
+    {
+      "id": "d0005",
+      "chapter": "ch0005",
+      "severity": "s3",
+      "dimension": null,
+      "quote": "重复的引文",
+      "note": "重复的说明",
+      "createdAt": "2026-10-12T15:11:10.905Z",
+      "status": "未处理",
+      "waiver": null
     }
   ]
 }
