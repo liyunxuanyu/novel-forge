@@ -1,5 +1,7 @@
 # DeepSeek Harness (DSH) 插件开发技术参考
 
+本文档位于 Novel Forge 根 `docs/`。当前插件包根目录是 `packages/dsh-plugin/`，所以文中的 `lib/index.js`、`lib/client.js`、`skills/` 和 `package.json` 等插件相对路径均相对于 `packages/dsh-plugin/` 解析。
+
 > 目标：让读者在不重读整个 DSH API 的前提下，从零写出一个可用的 DSH 插件。
 > 运行时版本：`0.2.0-rc.2`（Cordis `4.0.4`）。
 > 全部结论均来自本地文件；每条都给出可核对的文件路径。凡本地无法确证的，均显式标注 **未确认**。
