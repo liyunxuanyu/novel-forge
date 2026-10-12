@@ -167,8 +167,12 @@
       "quote": "q10",
       "note": "第二条阻断项",
       "createdAt": "2026-10-12T15:11:18.148Z",
-      "status": "未处置",
-      "waiver": null
+      "status": "已豁免",
+      "waiver": {
+        "reason": "细纲那一条已改过，此处写法合法",
+        "at": "2026-10-12T15:11:18.535Z",
+        "via": "chapter.blocked"
+      }
     }
   ]
 }
