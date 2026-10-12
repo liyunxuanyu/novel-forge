@@ -204,6 +204,17 @@
         "at": "2026-10-12T15:11:20.103Z",
         "via": "chapter.blocked"
       }
+    },
+    {
+      "id": "d0015",
+      "chapter": "ch0030",
+      "severity": "s2",
+      "dimension": null,
+      "quote": "q30",
+      "note": "全书范围查得到",
+      "createdAt": "2026-10-12T15:11:20.502Z",
+      "status": "未处置",
+      "waiver": null
     }
   ]
 }
