@@ -79,6 +79,17 @@
         "reason": "删掉「靠前两个字先没了」，让限定词只是渐糊",
         "at": "2026-10-12T15:11:12.143Z"
       }
+    },
+    {
+      "id": "d0007",
+      "chapter": "ch0002",
+      "severity": "s3",
+      "dimension": null,
+      "quote": "他又看了一眼",
+      "note": "重复动作",
+      "createdAt": "2026-10-12T15:11:13.426Z",
+      "status": "未处理",
+      "waiver": null
     }
   ]
 }
