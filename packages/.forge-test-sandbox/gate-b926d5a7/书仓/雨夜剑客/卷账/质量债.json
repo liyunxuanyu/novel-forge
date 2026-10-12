@@ -105,6 +105,17 @@
         "reason": "已确认可接受",
         "at": "2026-10-12T15:11:15.394Z"
       }
+    },
+    {
+      "id": "d0008",
+      "chapter": "ch0003",
+      "severity": "s3",
+      "dimension": null,
+      "quote": "a",
+      "note": "s3 一条",
+      "createdAt": "2026-10-12T15:11:15.795Z",
+      "status": "未处理",
+      "waiver": null
     }
   ]
 }
