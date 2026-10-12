@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "id": "d0001",
+      "chapter": "ch0003",
+      "severity": "s3",
+      "dimension": null,
+      "quote": "他抬头",
+      "note": "动作重复",
+      "createdAt": "2026-10-12T15:11:02.832Z",
+      "status": "未处理",
+      "waiver": null
+    }
+  ]
+}
