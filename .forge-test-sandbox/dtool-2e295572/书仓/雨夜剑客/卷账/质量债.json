@@ -9,8 +9,11 @@
       "quote": "他的心中充满了",
       "note": "AI 味",
       "createdAt": "2026-10-12T15:19:25.181Z",
-      "status": "未处理",
-      "waiver": null
+      "status": "已豁免",
+      "waiver": {
+        "reason": "确认可接受",
+        "at": "2026-10-12T15:19:25.582Z"
+      }
     }
   ]
 }
