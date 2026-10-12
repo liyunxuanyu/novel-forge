@@ -158,6 +158,17 @@
         "reason": null,
         "at": "2026-10-12T15:11:17.761Z"
       }
+    },
+    {
+      "id": "d0012",
+      "chapter": "ch0010",
+      "severity": "s2",
+      "dimension": null,
+      "quote": "q10",
+      "note": "第二条阻断项",
+      "createdAt": "2026-10-12T15:11:18.148Z",
+      "status": "未处置",
+      "waiver": null
     }
   ]
 }
