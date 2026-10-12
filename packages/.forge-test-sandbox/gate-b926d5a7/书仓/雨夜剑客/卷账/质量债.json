@@ -213,8 +213,12 @@
       "quote": "q30",
       "note": "全书范围查得到",
       "createdAt": "2026-10-12T15:11:20.502Z",
-      "status": "未处置",
-      "waiver": null
+      "status": "已豁免",
+      "waiver": {
+        "reason": "测试用：已确认不是问题",
+        "at": "2026-10-12T15:11:20.889Z",
+        "via": "chapter.blocked"
+      }
     }
   ]
 }
