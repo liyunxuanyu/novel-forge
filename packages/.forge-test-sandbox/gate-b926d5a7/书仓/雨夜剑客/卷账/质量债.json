@@ -23,8 +23,12 @@
       "quote": "s2 的引文",
       "note": "与第三章已定稿矛盾",
       "createdAt": "2026-10-12T15:11:09.590Z",
-      "status": "未处置",
-      "waiver": null
+      "status": "已处理",
+      "waiver": null,
+      "resolution": {
+        "how": "改成短句了",
+        "at": "2026-10-12T15:11:13.004Z"
+      }
     },
     {
       "id": "d0003",
