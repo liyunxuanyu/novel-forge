@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "id": "d0001",
+      "chapter": "ch0002",
+      "severity": "s4",
+      "dimension": null,
+      "quote": "他的心中充满了",
+      "note": "AI 味",
+      "createdAt": "2026-10-12T15:19:25.181Z",
+      "status": "未处理",
+      "waiver": null
+    }
+  ]
+}
